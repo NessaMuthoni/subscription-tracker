@@ -8,6 +8,7 @@ import (
 	"subscription-tracker/internal/handlers"
 	"subscription-tracker/internal/middleware"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,6 +23,17 @@ func main() {
 	}
 	defer db.Close()
 
+	// Setup Gin router
+	r := gin.Default()
+
+	// CORS configuration
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{cfg.FrontendURL},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowCredentials: true,
+	}))
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
 	userHandler := handlers.NewUserHandler(db)
@@ -31,12 +43,6 @@ func main() {
 	notificationHandler := handlers.NewNotificationHandler(db)
 	budgetHandler := handlers.NewBudgetHandler(db)
 	calendarHandler := handlers.NewCalendarHandler(db)
-
-	// Setup Gin router
-	r := gin.Default()
-
-	// Add middleware
-	r.Use(middleware.CORSMiddleware())
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
@@ -84,6 +90,14 @@ func main() {
 		paymentMethods.GET("", paymentHandler.GetPaymentMethods)
 		paymentMethods.POST("", paymentHandler.CreatePaymentMethod)
 		paymentMethods.DELETE("/:id", paymentHandler.DeletePaymentMethod)
+	}
+
+	// Payment balance check routes
+	payment := protected.Group("/payment")
+	{
+		payment.POST("/mpesa/balance", paymentHandler.CheckMpesaBalance)
+		payment.POST("/card/balance", paymentHandler.CheckCardBalance)
+		payment.POST("/paypal/balance", paymentHandler.CheckPayPalBalance)
 	}
 
 	// Analytics routes

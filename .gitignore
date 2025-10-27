@@ -1,27 +1,54 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.*.local
+*.env
+backend/.env
+Frontend/.env.local
 
-# dependencies
-/node_modules
+# Python virtual environment
+venv/
+ai-service/venv/
+*.pyc
+__pycache__/
 
-# next.js
-/.next/
-/out/
+# Node modules
+node_modules/
+Frontend/node_modules/
 
-# production
-/build
+# Build outputs
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# Go build files
+*.test
+*.out
+backend/tmp/
 
-# env files
-.env*
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
 
-# vercel
-.vercel
+# IDE files
+.vscode/
+.idea/
+*.iml
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker volumes
+postgres-data/

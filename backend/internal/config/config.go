@@ -18,15 +18,16 @@ type Config struct {
 	SMTPPort       string
 	SMTPUser       string
 	SMTPPassword   string
+	FrontendURL    string
 }
 
 func Load() *Config {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
+		log.Println("No .env file found, using environment variables")
 	}
 
 	return &Config{
-		DatabaseURL:    getEnv("DATABASE_URL", "postgres://user:password@localhost/subscription_tracker?sslmode=disable"),
+		DatabaseURL:    getEnv("DATABASE_URL", "postgres://postgres:password@localhost:5432/subscription_tracker?sslmode=disable"),
 		JWTSecret:      getEnv("JWT_SECRET", "your-secret-key"),
 		GoogleClientID: getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleSecret:   getEnv("GOOGLE_CLIENT_SECRET", ""),
@@ -36,6 +37,7 @@ func Load() *Config {
 		SMTPPort:       getEnv("SMTP_PORT", "587"),
 		SMTPUser:       getEnv("SMTP_USER", ""),
 		SMTPPassword:   getEnv("SMTP_PASSWORD", ""),
+		FrontendURL:    getEnv("FRONTEND_URL", "http://localhost:3000"),
 	}
 }
 

@@ -20,16 +20,20 @@ type Category struct {
 }
 
 type Subscription struct {
-	ID          uuid.UUID  `json:"id" db:"id"`
-	UserID      uuid.UUID  `json:"user_id" db:"user_id"`
-	Name        string     `json:"name" db:"name"`
-	Price       float64    `json:"price" db:"price"`
-	BillingDate time.Time  `json:"billing_date" db:"billing_date"`
-	CategoryID  *uuid.UUID `json:"category_id" db:"category_id"`
-	Status      string     `json:"status" db:"status"`
-	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
-	Category    *Category  `json:"category,omitempty"`
+	ID            uuid.UUID  `json:"id" db:"id"`
+	UserID        uuid.UUID  `json:"user_id" db:"user_id"`
+	Name          string     `json:"name" db:"name"`
+	Price         float64    `json:"price" db:"price"`
+	BillingCycle  string     `json:"billing_cycle" db:"billing_cycle"`
+	BillingDate   time.Time  `json:"billing_date" db:"billing_date"`
+	CategoryID    *uuid.UUID `json:"category_id" db:"category_id"`
+	Status        string     `json:"status" db:"status"`
+	PaymentMethod *string    `json:"payment_method" db:"payment_method"`
+	Description   *string    `json:"description" db:"description"`
+	WebsiteURL    *string    `json:"website_url" db:"website_url"`
+	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
+	Category      *Category  `json:"category,omitempty"`
 }
 
 type PaymentMethod struct {
@@ -83,19 +87,27 @@ type UpdateUserRequest struct {
 }
 
 type CreateSubscriptionRequest struct {
-	Name        string     `json:"name" binding:"required"`
-	Price       float64    `json:"price" binding:"required"`
-	BillingDate time.Time  `json:"billing_date" binding:"required"`
-	CategoryID  *uuid.UUID `json:"category_id"`
-	Status      string     `json:"status" binding:"required"`
+	Name          string     `json:"name" binding:"required"`
+	Price         float64    `json:"price" binding:"required"`
+	BillingCycle  string     `json:"billing_cycle" binding:"required"`
+	BillingDate   time.Time  `json:"billing_date" binding:"required"`
+	CategoryID    *uuid.UUID `json:"category_id"`
+	Status        string     `json:"status" binding:"required"`
+	PaymentMethod *string    `json:"payment_method"`
+	Description   *string    `json:"description"`
+	WebsiteURL    *string    `json:"website_url"`
 }
 
 type UpdateSubscriptionRequest struct {
-	Name        *string    `json:"name"`
-	Price       *float64   `json:"price"`
-	BillingDate *time.Time `json:"billing_date"`
-	CategoryID  *uuid.UUID `json:"category_id"`
-	Status      *string    `json:"status"`
+	Name          *string    `json:"name"`
+	Price         *float64   `json:"price"`
+	BillingCycle  *string    `json:"billing_cycle"`
+	BillingDate   *time.Time `json:"billing_date"`
+	CategoryID    *uuid.UUID `json:"category_id"`
+	Status        *string    `json:"status"`
+	PaymentMethod *string    `json:"payment_method"`
+	Description   *string    `json:"description"`
+	WebsiteURL    *string    `json:"website_url"`
 }
 
 type CreatePaymentMethodRequest struct {

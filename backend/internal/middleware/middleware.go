@@ -27,7 +27,7 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 
 		claims, err := auth.ValidateToken(bearerToken[1], jwtSecret)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token", "details": err.Error()})
 			c.Abort()
 			return
 		}

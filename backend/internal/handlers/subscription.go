@@ -28,7 +28,8 @@ func (h *SubscriptionHandler) GetSubscriptions(c *gin.Context) {
 	}
 
 	rows, err := h.db.Query(`
-		SELECT s.id, s.user_id, s.name, s.price, s.billing_date, s.category_id, s.status, s.created_at, s.updated_at,
+		SELECT s.id, s.user_id, s.name, s.price, s.billing_cycle, s.billing_date, s.category_id, s.status, 
+		       s.payment_method, s.description, s.website_url, s.created_at, s.updated_at,
 		       c.id, c.name
 		FROM subscriptions s
 		LEFT JOIN categories c ON s.category_id = c.id
@@ -48,9 +49,9 @@ func (h *SubscriptionHandler) GetSubscriptions(c *gin.Context) {
 		var categoryID, categoryName sql.NullString
 
 		err := rows.Scan(
-			&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingDate,
-			&sub.CategoryID, &sub.Status, &sub.CreatedAt, &sub.UpdatedAt,
-			&categoryID, &categoryName,
+			&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingCycle, &sub.BillingDate,
+			&sub.CategoryID, &sub.Status, &sub.PaymentMethod, &sub.Description, &sub.WebsiteURL,
+			&sub.CreatedAt, &sub.UpdatedAt, &categoryID, &categoryName,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to scan subscription"})
@@ -88,9 +89,9 @@ func (h *SubscriptionHandler) CreateSubscription(c *gin.Context) {
 	now := time.Now()
 
 	_, err := h.db.Exec(`
-		INSERT INTO subscriptions (id, user_id, name, price, billing_date, category_id, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, subscriptionID, userID.(uuid.UUID), req.Name, req.Price, req.BillingDate, req.CategoryID, req.Status, now, now)
+		INSERT INTO subscriptions (id, user_id, name, price, billing_cycle, billing_date, category_id, status, payment_method, description, website_url, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, subscriptionID, userID.(uuid.UUID), req.Name, req.Price, req.BillingCycle, req.BillingDate, req.CategoryID, req.Status, req.PaymentMethod, req.Description, req.WebsiteURL, now, now)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to create subscription"})
@@ -102,14 +103,15 @@ func (h *SubscriptionHandler) CreateSubscription(c *gin.Context) {
 	var categoryID, categoryName sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT s.id, s.user_id, s.name, s.price, s.billing_date, s.category_id, s.status, s.created_at, s.updated_at,
+		SELECT s.id, s.user_id, s.name, s.price, s.billing_cycle, s.billing_date, s.category_id, s.status, 
+		       s.payment_method, s.description, s.website_url, s.created_at, s.updated_at,
 		       c.id, c.name
 		FROM subscriptions s
 		LEFT JOIN categories c ON s.category_id = c.id
 		WHERE s.id = $1
 	`, subscriptionID).Scan(
-		&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingDate,
-		&sub.CategoryID, &sub.Status, &sub.CreatedAt, &sub.UpdatedAt,
+		&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingCycle, &sub.BillingDate,
+		&sub.CategoryID, &sub.Status, &sub.PaymentMethod, &sub.Description, &sub.WebsiteURL, &sub.CreatedAt, &sub.UpdatedAt,
 		&categoryID, &categoryName,
 	)
 
@@ -146,14 +148,15 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 	var categoryID, categoryName sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT s.id, s.user_id, s.name, s.price, s.billing_date, s.category_id, s.status, s.created_at, s.updated_at,
+		SELECT s.id, s.user_id, s.name, s.price, s.billing_cycle, s.billing_date, s.category_id, s.status,
+		       s.payment_method, s.description, s.website_url, s.created_at, s.updated_at,
 		       c.id, c.name
 		FROM subscriptions s
 		LEFT JOIN categories c ON s.category_id = c.id
 		WHERE s.id = $1 AND s.user_id = $2
 	`, subscriptionID, userID.(uuid.UUID)).Scan(
-		&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingDate,
-		&sub.CategoryID, &sub.Status, &sub.CreatedAt, &sub.UpdatedAt,
+		&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingCycle, &sub.BillingDate,
+		&sub.CategoryID, &sub.Status, &sub.PaymentMethod, &sub.Description, &sub.WebsiteURL, &sub.CreatedAt, &sub.UpdatedAt,
 		&categoryID, &categoryName,
 	)
 
@@ -213,6 +216,12 @@ func (h *SubscriptionHandler) UpdateSubscription(c *gin.Context) {
 		argCount++
 	}
 
+	if req.BillingCycle != nil {
+		updates = append(updates, "billing_cycle = $"+string(rune(argCount+48)))
+		args = append(args, *req.BillingCycle)
+		argCount++
+	}
+
 	if req.BillingDate != nil {
 		updates = append(updates, "billing_date = $"+string(rune(argCount+48)))
 		args = append(args, *req.BillingDate)
@@ -228,6 +237,24 @@ func (h *SubscriptionHandler) UpdateSubscription(c *gin.Context) {
 	if req.Status != nil {
 		updates = append(updates, "status = $"+string(rune(argCount+48)))
 		args = append(args, *req.Status)
+		argCount++
+	}
+
+	if req.PaymentMethod != nil {
+		updates = append(updates, "payment_method = $"+string(rune(argCount+48)))
+		args = append(args, *req.PaymentMethod)
+		argCount++
+	}
+
+	if req.Description != nil {
+		updates = append(updates, "description = $"+string(rune(argCount+48)))
+		args = append(args, *req.Description)
+		argCount++
+	}
+
+	if req.WebsiteURL != nil {
+		updates = append(updates, "website_url = $"+string(rune(argCount+48)))
+		args = append(args, *req.WebsiteURL)
 		argCount++
 	}
 
