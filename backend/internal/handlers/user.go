@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"subscription-tracker/internal/database"
@@ -27,10 +29,11 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 	}
 
 	var user models.User
+	var preferencesJSON []byte
 	err := h.db.QueryRow(
-		"SELECT id, email, name, created_at FROM users WHERE id = $1",
+		"SELECT id, email, name, COALESCE(preferences, '{}'::jsonb), created_at FROM users WHERE id = $1",
 		userID.(uuid.UUID),
-	).Scan(&user.ID, &user.Email, &user.Name, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.Name, &preferencesJSON, &user.CreatedAt)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -39,6 +42,14 @@ func (h *UserHandler) GetMe(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Database error"})
 		return
+	}
+
+	// Parse preferences JSON
+	if len(preferencesJSON) > 0 {
+		var prefs models.UserPreferences
+		if err := json.Unmarshal(preferencesJSON, &prefs); err == nil {
+			user.Preferences = &prefs
+		}
 	}
 
 	c.JSON(http.StatusOK, user)
@@ -63,14 +74,25 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 	argCount := 1
 
 	if req.Name != nil {
-		updates = append(updates, "name = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("name = $%d", argCount))
 		args = append(args, *req.Name)
 		argCount++
 	}
 
 	if req.Email != nil {
-		updates = append(updates, "email = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("email = $%d", argCount))
 		args = append(args, *req.Email)
+		argCount++
+	}
+
+	if req.Preferences != nil {
+		preferencesJSON, err := json.Marshal(req.Preferences)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: "Invalid preferences format"})
+			return
+		}
+		updates = append(updates, fmt.Sprintf("preferences = $%d", argCount))
+		args = append(args, preferencesJSON)
 		argCount++
 	}
 
@@ -84,24 +106,35 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 	for i := 1; i < len(updates); i++ {
 		query += ", " + updates[i]
 	}
-	query += " WHERE id = $" + string(rune(argCount+48))
+	query += fmt.Sprintf(" WHERE id = $%d", argCount)
 
 	_, err := h.db.Exec(query, args...)
 	if err != nil {
+		fmt.Printf("Failed to update user: %v\n", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to update user"})
 		return
 	}
 
-	// Return updated user
+	// Return updated user with preferences
 	var user models.User
+	var preferencesJSON []byte
 	err = h.db.QueryRow(
-		"SELECT id, email, name, created_at FROM users WHERE id = $1",
+		"SELECT id, email, name, COALESCE(preferences, '{}'::jsonb), created_at FROM users WHERE id = $1",
 		userID.(uuid.UUID),
-	).Scan(&user.ID, &user.Email, &user.Name, &user.CreatedAt)
+	).Scan(&user.ID, &user.Email, &user.Name, &preferencesJSON, &user.CreatedAt)
 
 	if err != nil {
+		fmt.Printf("Failed to retrieve updated user: %v\n", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to retrieve updated user"})
 		return
+	}
+
+	// Parse preferences JSON
+	if len(preferencesJSON) > 0 {
+		var prefs models.UserPreferences
+		if err := json.Unmarshal(preferencesJSON, &prefs); err == nil {
+			user.Preferences = &prefs
+		}
 	}
 
 	c.JSON(http.StatusOK, user)

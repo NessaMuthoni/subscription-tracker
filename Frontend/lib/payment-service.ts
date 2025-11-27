@@ -19,14 +19,18 @@ export class PaymentService {
     error?: string
   }> {
     try {
+      // Format phone number to 254XXXXXXXXX format (required by M-Pesa API)
+      const formattedPhone = this.formatMpesaPhoneNumber(phoneNumber)
+      
       // Call backend API endpoint that handles M-Pesa Daraja API
-      const response = await fetch('/api/payment/mpesa/balance', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      const response = await fetch(`${apiUrl}/payment/mpesa/balance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
         },
-        body: JSON.stringify({ phoneNumber }),
+        body: JSON.stringify({ phoneNumber: formattedPhone }),
       })
 
       if (!response.ok) {
@@ -51,6 +55,24 @@ export class PaymentService {
     }
   }
 
+  // Format phone number to M-Pesa format (254XXXXXXXXX)
+  private formatMpesaPhoneNumber(phoneNumber: string): string {
+    // Remove all non-digit characters
+    let digits = phoneNumber.replace(/\D/g, '')
+    
+    // If starts with 0, replace with 254
+    if (digits.startsWith('0')) {
+      digits = '254' + digits.substring(1)
+    }
+    
+    // If doesn't start with 254, prepend it
+    if (!digits.startsWith('254')) {
+      digits = '254' + digits
+    }
+    
+    return digits
+  }
+
   // Check card balance via bank API
   async checkCardBalance(cardToken: string): Promise<{
     success: boolean
@@ -61,7 +83,8 @@ export class PaymentService {
   }> {
     try {
       // Call backend API endpoint that handles bank/card provider API
-      const response = await fetch('/api/payment/card/balance', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      const response = await fetch(`${apiUrl}/payment/card/balance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -103,7 +126,8 @@ export class PaymentService {
   }> {
     try {
       // Call backend API endpoint that handles PayPal API
-      const response = await fetch('/api/payment/paypal/balance', {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      const response = await fetch(`${apiUrl}/payment/paypal/balance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -166,6 +190,52 @@ export class PaymentService {
       totalAvailable,
       shortfall,
       recommendations,
+    }
+  }
+
+  // Initiate M-Pesa STK Push for subscription payment
+  async initiateMpesaPayment(phoneNumber: string, amount: number, subscriptionName: string): Promise<{
+    success: boolean
+    message: string
+    checkoutRequestId?: string
+    error?: string
+  }> {
+    try {
+      const formattedPhone = this.formatMpesaPhoneNumber(phoneNumber)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      
+      const response = await fetch(`${apiUrl}/payment/mpesa/stk-push`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        },
+        body: JSON.stringify({
+          phoneNumber: formattedPhone,
+          amount: Math.round(amount), // M-Pesa requires whole numbers
+          accountReference: subscriptionName,
+          transactionDesc: `Payment for ${subscriptionName} subscription`,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to initiate M-Pesa payment')
+      }
+
+      const data = await response.json()
+      return {
+        success: true,
+        message: data.message || 'Payment request sent! Please check your phone to complete the transaction.',
+        checkoutRequestId: data.checkoutRequestId,
+      }
+    } catch (error) {
+      console.error('M-Pesa STK Push failed:', error)
+      return {
+        success: false,
+        message: 'Failed to initiate payment',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      }
     }
   }
 }

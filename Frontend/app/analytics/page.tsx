@@ -60,19 +60,65 @@ export default function AnalyticsPage() {
         setCategoryData(categoryDataArray)
 
         // Generate trend data (last 6 months with current month data)
-        const currentTotal = (data || []).reduce((sum: number, sub: any) => sum + (sub.price || sub.cost || 0), 0)
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        const currentMonth = new Date().getMonth()
+        
+        // Helper function to check if a subscription is billed in a specific month
+        const isSubscriptionBilledInMonth = (sub: any, targetMonth: Date): boolean => {
+          const billingDate = sub.billing_date ? new Date(sub.billing_date) : null
+          if (!billingDate) return false
+          
+          const createdDate = sub.created_at ? new Date(sub.created_at) : billingDate
+          
+          // If the subscription wasn't created yet, don't count it
+          if (targetMonth < new Date(createdDate.getFullYear(), createdDate.getMonth(), 1)) {
+            return false
+          }
+          
+          // If the billing date is in the future relative to target month, don't count it
+          if (billingDate > new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0)) {
+            return false
+          }
+          
+          return true
+        }
         
         const trendData = []
+        const today = new Date()
+        
         for (let i = 5; i >= 0; i--) {
-          const monthIndex = (currentMonth - i + 12) % 12
-          // For real implementation, this would fetch historical data
-          // For now, we'll show current data for the current month and estimated data for previous months
-          const amount = i === 0 ? currentTotal : currentTotal * (0.8 + Math.random() * 0.4)
+          // Calculate the date for this month in the trend
+          const trendMonth = new Date(today.getFullYear(), today.getMonth() - i, 1)
+          const monthIndex = trendMonth.getMonth()
+          
+          // Calculate spending for this specific month
+          let monthSpending = 0
+          
+          if (i === 0) {
+            // Current month - only count subscriptions that have been billed or are due this month
+            monthSpending = (data || []).reduce((sum: number, sub: any) => {
+              const billingDate = sub.billing_date ? new Date(sub.billing_date) : null
+              if (!billingDate) return sum
+              
+              // Only count if billing date is today or in the past of current month
+              const isBilledThisMonth = billingDate.getMonth() === today.getMonth() && 
+                                        billingDate.getFullYear() === today.getFullYear() &&
+                                        billingDate <= today
+              
+              return isBilledThisMonth ? sum + (sub.price || sub.cost || 0) : sum
+            }, 0)
+          } else {
+            // Past months - estimate based on subscriptions that were active then
+            monthSpending = (data || []).reduce((sum: number, sub: any) => {
+              if (isSubscriptionBilledInMonth(sub, trendMonth)) {
+                return sum + (sub.price || sub.cost || 0)
+              }
+              return sum
+            }, 0)
+          }
+          
           trendData.push({
             month: monthNames[monthIndex],
-            amount: Math.round(amount * 100) / 100
+            amount: Math.round(monthSpending * 100) / 100
           })
         }
         setMonthlyTrendData(trendData)
@@ -186,7 +232,60 @@ export default function AnalyticsPage() {
             </Card>
           </div>
 
-          {/* Charts */}
+          {/* Monthly Trend Line Chart - Full Width at Top */}
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <CardTitle className="text-foreground">Spending Trend Over Time</CardTitle>
+              <CardDescription className="text-muted-foreground">6-month spending history</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="h-[350px] flex items-center justify-center">
+                  <div className="flex items-center">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span>Loading trend data...</span>
+                  </div>
+                </div>
+              ) : monthlyTrendData.length === 0 ? (
+                <div className="h-[350px] flex items-center justify-center">
+                  <div className="text-center">
+                    <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">No trend data available</p>
+                    <p className="text-sm text-muted-foreground mt-1">Historical data will appear here over time</p>
+                  </div>
+                </div>
+              ) : (
+                <ChartContainer
+                  config={{
+                    amount: {
+                      label: "Amount",
+                      color: "hsl(var(--primary))",
+                    },
+                  }}
+                  className="h-[350px]"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={monthlyTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis domain={[0, 'auto']} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Line
+                        type="monotone"
+                        dataKey="amount"
+                        stroke="hsl(var(--primary))"
+                        strokeWidth={3}
+                        dot={{ fill: "hsl(var(--primary))", strokeWidth: 2, r: 6 }}
+                        activeDot={{ r: 8 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Charts Grid - Side by Side */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Category Breakdown Pie Chart */}
             <Card className="bg-card border-border">
@@ -196,14 +295,14 @@ export default function AnalyticsPage() {
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="h-[300px] flex items-center justify-center">
+                  <div className="h-[350px] flex items-center justify-center">
                     <div className="flex items-center">
                       <Loader2 className="h-6 w-6 animate-spin mr-2" />
                       <span>Loading chart data...</span>
                     </div>
                   </div>
                 ) : categoryData.length === 0 ? (
-                  <div className="h-[300px] flex items-center justify-center">
+                  <div className="h-[350px] flex items-center justify-center">
                     <div className="text-center">
                       <PieChartIcon className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                       <p className="text-muted-foreground">No spending data available</p>
@@ -218,7 +317,7 @@ export default function AnalyticsPage() {
                         color: "hsl(var(--chart-1))",
                       },
                     }}
-                    className="h-[300px]"
+                    className="h-[350px]"
                   >
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -227,8 +326,8 @@ export default function AnalyticsPage() {
                           cx="50%"
                           cy="50%"
                           labelLine={false}
-                          label={({ category, amount }) => `${category}: KSh ${amount}`}
-                          outerRadius={80}
+                          label={({ category, amount }: any) => `${category}: KSh ${amount.toFixed(0)}`}
+                          outerRadius={100}
                           fill="#8884d8"
                           dataKey="amount"
                         >
@@ -252,14 +351,14 @@ export default function AnalyticsPage() {
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="h-[300px] flex items-center justify-center">
+                  <div className="h-[350px] flex items-center justify-center">
                     <div className="flex items-center">
                       <Loader2 className="h-6 w-6 animate-spin mr-2" />
                       <span>Loading subscriptions...</span>
                     </div>
                   </div>
                 ) : subscriptions.length === 0 ? (
-                  <div className="h-[300px] flex items-center justify-center">
+                  <div className="h-[350px] flex items-center justify-center">
                     <div className="text-center">
                       <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                       <p className="text-muted-foreground">No subscription data available</p>
@@ -274,15 +373,21 @@ export default function AnalyticsPage() {
                         color: "hsl(var(--primary))",
                       },
                     }}
-                    className="h-[300px]"
+                    className="h-[350px]"
                   >
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={subscriptions.map(sub => ({ 
                         name: sub.name, 
                         monthly: sub.price || sub.cost || 0 
                       }))}>
-                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                        <YAxis />
+                        <XAxis 
+                          dataKey="name" 
+                          angle={-45} 
+                          textAnchor="end" 
+                          height={100}
+                          interval={0}
+                        />
+                        <YAxis domain={[0, 'auto']} />
                         <ChartTooltip content={<ChartTooltipContent />} />
                         <Bar dataKey="monthly" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                       </BarChart>
@@ -292,59 +397,6 @@ export default function AnalyticsPage() {
               </CardContent>
             </Card>
           </div>
-
-          {/* Monthly Trend Line Chart */}
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="text-foreground">Spending Trend Over Time</CardTitle>
-              <CardDescription className="text-muted-foreground">6-month spending history</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="h-[400px] flex items-center justify-center">
-                  <div className="flex items-center">
-                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                    <span>Loading trend data...</span>
-                  </div>
-                </div>
-              ) : monthlyTrendData.length === 0 ? (
-                <div className="h-[400px] flex items-center justify-center">
-                  <div className="text-center">
-                    <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">No trend data available</p>
-                    <p className="text-sm text-muted-foreground mt-1">Historical data will appear here over time</p>
-                  </div>
-                </div>
-              ) : (
-                <ChartContainer
-                  config={{
-                    amount: {
-                      label: "Amount",
-                      color: "hsl(var(--primary))",
-                    },
-                  }}
-                  className="h-[400px]"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={monthlyTrendData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <Line
-                        type="monotone"
-                        dataKey="amount"
-                        stroke="hsl(var(--primary))"
-                        strokeWidth={3}
-                        dot={{ fill: "hsl(var(--primary))", strokeWidth: 2, r: 6 }}
-                        activeDot={{ r: 8 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>

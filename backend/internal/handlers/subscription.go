@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -29,7 +30,7 @@ func (h *SubscriptionHandler) GetSubscriptions(c *gin.Context) {
 
 	rows, err := h.db.Query(`
 		SELECT s.id, s.user_id, s.name, s.price, s.billing_cycle, s.billing_date, s.category_id, s.status, 
-		       s.payment_method, s.description, s.website_url, s.created_at, s.updated_at,
+		       s.description, s.website_url, s.created_at, s.updated_at, s.payment_method,
 		       c.id, c.name
 		FROM subscriptions s
 		LEFT JOIN categories c ON s.category_id = c.id
@@ -38,7 +39,8 @@ func (h *SubscriptionHandler) GetSubscriptions(c *gin.Context) {
 	`, userID.(uuid.UUID))
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Database error"})
+		println("Query error:", err.Error())
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Database error: " + err.Error()})
 		return
 	}
 	defer rows.Close()
@@ -50,11 +52,12 @@ func (h *SubscriptionHandler) GetSubscriptions(c *gin.Context) {
 
 		err := rows.Scan(
 			&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingCycle, &sub.BillingDate,
-			&sub.CategoryID, &sub.Status, &sub.PaymentMethod, &sub.Description, &sub.WebsiteURL,
-			&sub.CreatedAt, &sub.UpdatedAt, &categoryID, &categoryName,
+			&sub.CategoryID, &sub.Status, &sub.Description, &sub.WebsiteURL,
+			&sub.CreatedAt, &sub.UpdatedAt, &sub.PaymentMethod, &categoryID, &categoryName,
 		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to scan subscription"})
+			println("Scan error:", err.Error())
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to scan subscription: " + err.Error()})
 			return
 		}
 
@@ -85,13 +88,27 @@ func (h *SubscriptionHandler) CreateSubscription(c *gin.Context) {
 		return
 	}
 
+	// Look up category ID by name if category name is provided
+	var finalCategoryID *uuid.UUID
+	if req.CategoryID != nil {
+		finalCategoryID = req.CategoryID
+	} else if req.Category != nil && *req.Category != "" {
+		var catID uuid.UUID
+		err := h.db.QueryRow("SELECT id FROM categories WHERE LOWER(name) = LOWER($1)", *req.Category).Scan(&catID)
+		if err == nil {
+			finalCategoryID = &catID
+		} else {
+			fmt.Printf("Warning: Category '%s' not found, using NULL\n", *req.Category)
+		}
+	}
+
 	subscriptionID := uuid.New()
 	now := time.Now()
 
 	_, err := h.db.Exec(`
 		INSERT INTO subscriptions (id, user_id, name, price, billing_cycle, billing_date, category_id, status, payment_method, description, website_url, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-	`, subscriptionID, userID.(uuid.UUID), req.Name, req.Price, req.BillingCycle, req.BillingDate, req.CategoryID, req.Status, req.PaymentMethod, req.Description, req.WebsiteURL, now, now)
+	`, subscriptionID, userID.(uuid.UUID), req.Name, req.Price, req.BillingCycle, req.BillingDate, finalCategoryID, req.Status, req.PaymentMethod, req.Description, req.WebsiteURL, now, now)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to create subscription"})
@@ -104,14 +121,14 @@ func (h *SubscriptionHandler) CreateSubscription(c *gin.Context) {
 
 	err = h.db.QueryRow(`
 		SELECT s.id, s.user_id, s.name, s.price, s.billing_cycle, s.billing_date, s.category_id, s.status, 
-		       s.payment_method, s.description, s.website_url, s.created_at, s.updated_at,
+		       s.description, s.website_url, s.created_at, s.updated_at, s.payment_method,
 		       c.id, c.name
 		FROM subscriptions s
 		LEFT JOIN categories c ON s.category_id = c.id
 		WHERE s.id = $1
 	`, subscriptionID).Scan(
 		&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingCycle, &sub.BillingDate,
-		&sub.CategoryID, &sub.Status, &sub.PaymentMethod, &sub.Description, &sub.WebsiteURL, &sub.CreatedAt, &sub.UpdatedAt,
+		&sub.CategoryID, &sub.Status, &sub.Description, &sub.WebsiteURL, &sub.CreatedAt, &sub.UpdatedAt, &sub.PaymentMethod,
 		&categoryID, &categoryName,
 	)
 
@@ -149,14 +166,14 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 
 	err = h.db.QueryRow(`
 		SELECT s.id, s.user_id, s.name, s.price, s.billing_cycle, s.billing_date, s.category_id, s.status,
-		       s.payment_method, s.description, s.website_url, s.created_at, s.updated_at,
+		       s.description, s.website_url, s.created_at, s.updated_at, s.payment_method,
 		       c.id, c.name
 		FROM subscriptions s
 		LEFT JOIN categories c ON s.category_id = c.id
 		WHERE s.id = $1 AND s.user_id = $2
 	`, subscriptionID, userID.(uuid.UUID)).Scan(
 		&sub.ID, &sub.UserID, &sub.Name, &sub.Price, &sub.BillingCycle, &sub.BillingDate,
-		&sub.CategoryID, &sub.Status, &sub.PaymentMethod, &sub.Description, &sub.WebsiteURL, &sub.CreatedAt, &sub.UpdatedAt,
+		&sub.CategoryID, &sub.Status, &sub.Description, &sub.WebsiteURL, &sub.CreatedAt, &sub.UpdatedAt, &sub.PaymentMethod,
 		&categoryID, &categoryName,
 	)
 
@@ -205,55 +222,64 @@ func (h *SubscriptionHandler) UpdateSubscription(c *gin.Context) {
 	argCount := 1
 
 	if req.Name != nil {
-		updates = append(updates, "name = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("name = $%d", argCount))
 		args = append(args, *req.Name)
 		argCount++
 	}
 
 	if req.Price != nil {
-		updates = append(updates, "price = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("price = $%d", argCount))
 		args = append(args, *req.Price)
 		argCount++
 	}
 
 	if req.BillingCycle != nil {
-		updates = append(updates, "billing_cycle = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("billing_cycle = $%d", argCount))
 		args = append(args, *req.BillingCycle)
 		argCount++
 	}
 
 	if req.BillingDate != nil {
-		updates = append(updates, "billing_date = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("billing_date = $%d", argCount))
 		args = append(args, *req.BillingDate)
 		argCount++
 	}
 
 	if req.CategoryID != nil {
-		updates = append(updates, "category_id = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("category_id = $%d", argCount))
 		args = append(args, *req.CategoryID)
 		argCount++
+	} else if req.Category != nil {
+		// Convert category name to ID
+		var categoryID uuid.UUID
+		err := h.db.QueryRow("SELECT id FROM categories WHERE LOWER(name) = LOWER($1)", *req.Category).Scan(&categoryID)
+		if err == nil {
+			updates = append(updates, fmt.Sprintf("category_id = $%d", argCount))
+			args = append(args, categoryID)
+			argCount++
+		}
 	}
 
 	if req.Status != nil {
-		updates = append(updates, "status = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("status = $%d", argCount))
 		args = append(args, *req.Status)
 		argCount++
 	}
 
 	if req.PaymentMethod != nil {
-		updates = append(updates, "payment_method = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("payment_method = $%d", argCount))
 		args = append(args, *req.PaymentMethod)
 		argCount++
 	}
 
 	if req.Description != nil {
-		updates = append(updates, "description = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("description = $%d", argCount))
 		args = append(args, *req.Description)
 		argCount++
 	}
 
 	if req.WebsiteURL != nil {
-		updates = append(updates, "website_url = $"+string(rune(argCount+48)))
+		updates = append(updates, fmt.Sprintf("website_url = $%d", argCount))
 		args = append(args, *req.WebsiteURL)
 		argCount++
 	}
@@ -263,7 +289,7 @@ func (h *SubscriptionHandler) UpdateSubscription(c *gin.Context) {
 		return
 	}
 
-	updates = append(updates, "updated_at = $"+string(rune(argCount+48)))
+	updates = append(updates, fmt.Sprintf("updated_at = $%d", argCount))
 	args = append(args, time.Now())
 	argCount++
 
@@ -272,7 +298,7 @@ func (h *SubscriptionHandler) UpdateSubscription(c *gin.Context) {
 	for i := 1; i < len(updates); i++ {
 		query += ", " + updates[i]
 	}
-	query += " WHERE id = $" + string(rune(argCount+48)) + " AND user_id = $" + string(rune(argCount+49))
+	query += fmt.Sprintf(" WHERE id = $%d AND user_id = $%d", argCount, argCount+1)
 
 	result, err := h.db.Exec(query, args...)
 	if err != nil {

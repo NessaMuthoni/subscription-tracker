@@ -6,12 +6,46 @@ import (
 	"github.com/google/uuid"
 )
 
+type UserPreferences struct {
+	Budget        *BudgetPreferences        `json:"budget,omitempty"`
+	Notifications *NotificationPreferences  `json:"notifications,omitempty"`
+	AI            *AIPreferences            `json:"ai,omitempty"`
+	Calendar      *CalendarPreferences      `json:"calendar,omitempty"`
+}
+
+type BudgetPreferences struct {
+	Monthly      float64 `json:"monthly"`
+	Currency     string  `json:"currency"`
+	CheckBalance bool    `json:"checkBalance"`
+}
+
+type NotificationPreferences struct {
+	Email        bool `json:"email"`
+	Push         bool `json:"push"`
+	SMS          bool `json:"sms"`
+	ReminderDays int  `json:"reminderDays"`
+}
+
+type AIPreferences struct {
+	Categorization  bool `json:"categorization"`
+	Predictions     bool `json:"predictions"`
+	Recommendations bool `json:"recommendations"`
+}
+
+type CalendarPreferences struct {
+	GoogleSync bool `json:"googleSync"`
+}
+
 type User struct {
-	ID           uuid.UUID `json:"id" db:"id"`
-	Email        string    `json:"email" db:"email"`
-	PasswordHash string    `json:"-" db:"password_hash"`
-	Name         *string   `json:"name" db:"name"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	ID                 uuid.UUID        `json:"id" db:"id"`
+	Email              string           `json:"email" db:"email"`
+	PasswordHash       string           `json:"-" db:"password_hash"`
+	Name               *string          `json:"name" db:"name"`
+	Preferences        *UserPreferences `json:"preferences,omitempty" db:"preferences"`
+	GoogleAccessToken  *string          `json:"-" db:"google_access_token"`
+	GoogleRefreshToken *string          `json:"-" db:"google_refresh_token"`
+	GoogleTokenExpiry  *time.Time       `json:"-" db:"google_token_expiry"`
+	CreatedAt          time.Time        `json:"created_at" db:"created_at"`
 }
 
 type Category struct {
@@ -37,12 +71,19 @@ type Subscription struct {
 }
 
 type PaymentMethod struct {
-	ID        uuid.UUID `json:"id" db:"id"`
-	UserID    uuid.UUID `json:"user_id" db:"user_id"`
-	Type      string    `json:"type" db:"type"`
-	Last4     *string   `json:"last4" db:"last4"`
-	Brand     *string   `json:"brand" db:"brand"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	ID               uuid.UUID  `json:"id" db:"id"`
+	UserID           uuid.UUID  `json:"user_id" db:"user_id"`
+	Type             string     `json:"type" db:"type"` // credit_card, debit_card, mpesa, paypal, paystack, bank_transfer
+	Last4            *string    `json:"last4" db:"last4"`
+	Brand            *string    `json:"brand" db:"brand"`
+	PhoneNumber      *string    `json:"phone_number,omitempty" db:"phone_number"`       // For M-Pesa
+	AccountEmail     *string    `json:"account_email,omitempty" db:"account_email"`     // For PayPal/Paystack
+	APIKeyEncrypted  *string    `json:"-" db:"api_key_encrypted"`                       // For Paystack (never exposed)
+	LastBalanceCheck *time.Time `json:"last_balance_check,omitempty" db:"last_balance_check"`
+	BalanceCents     *int64     `json:"balance_cents,omitempty" db:"balance_cents"`
+	Currency         *string    `json:"currency,omitempty" db:"currency"`
+	IsDefault        bool       `json:"is_default" db:"is_default"`
+	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 }
 
 type Notification struct {
@@ -82,8 +123,9 @@ type SignupRequest struct {
 }
 
 type UpdateUserRequest struct {
-	Name  *string `json:"name"`
-	Email *string `json:"email"`
+	Name        *string          `json:"name"`
+	Email       *string          `json:"email"`
+	Preferences *UserPreferences `json:"preferences"`
 }
 
 type CreateSubscriptionRequest struct {
@@ -92,6 +134,7 @@ type CreateSubscriptionRequest struct {
 	BillingCycle  string     `json:"billing_cycle" binding:"required"`
 	BillingDate   time.Time  `json:"billing_date" binding:"required"`
 	CategoryID    *uuid.UUID `json:"category_id"`
+	Category      *string    `json:"category"` // Category name (will be converted to ID)
 	Status        string     `json:"status" binding:"required"`
 	PaymentMethod *string    `json:"payment_method"`
 	Description   *string    `json:"description"`
@@ -104,6 +147,7 @@ type UpdateSubscriptionRequest struct {
 	BillingCycle  *string    `json:"billing_cycle"`
 	BillingDate   *time.Time `json:"billing_date"`
 	CategoryID    *uuid.UUID `json:"category_id"`
+	Category      *string    `json:"category"` // Category name (will be converted to ID)
 	Status        *string    `json:"status"`
 	PaymentMethod *string    `json:"payment_method"`
 	Description   *string    `json:"description"`
@@ -111,9 +155,12 @@ type UpdateSubscriptionRequest struct {
 }
 
 type CreatePaymentMethodRequest struct {
-	Type  string  `json:"type" binding:"required"`
-	Last4 *string `json:"last4"`
-	Brand *string `json:"brand"`
+	Type         string  `json:"type" binding:"required"` // credit_card, debit_card, mpesa, paypal, paystack, bank_transfer
+	Last4        *string `json:"last4"`                   // For cards
+	Brand        *string `json:"brand"`                   // For cards
+	PhoneNumber  *string `json:"phone_number"`            // For M-Pesa (format: +254XXXXXXXXX)
+	AccountEmail *string `json:"account_email"`           // For PayPal/Paystack
+	APIKey       *string `json:"api_key"`                 // For Paystack (will be encrypted)
 }
 
 type CreateBudgetRequest struct {

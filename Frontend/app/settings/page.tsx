@@ -173,30 +173,30 @@ export default function SettingsPage() {
           )}
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-6">
-              <TabsTrigger value="profile" className="flex items-center gap-2">
+            <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 gap-1">
+              <TabsTrigger value="profile" className="flex items-center gap-1 md:gap-2">
                 <User className="h-4 w-4" />
-                Profile
+                <span className="hidden sm:inline">Profile</span>
               </TabsTrigger>
-              <TabsTrigger value="notifications" className="flex items-center gap-2">
+              <TabsTrigger value="notifications" className="flex items-center gap-1 md:gap-2">
                 <Bell className="h-4 w-4" />
-                Notifications
+                <span className="hidden sm:inline">Notifications</span>
               </TabsTrigger>
-              <TabsTrigger value="budget" className="flex items-center gap-2">
+              <TabsTrigger value="budget" className="flex items-center gap-1 md:gap-2">
                 <CreditCard className="h-4 w-4" />
-                Budget
+                <span className="hidden sm:inline">Budget</span>
               </TabsTrigger>
-              <TabsTrigger value="payments" className="flex items-center gap-2">
+              <TabsTrigger value="payments" className="flex items-center gap-1 md:gap-2">
                 <Wallet className="h-4 w-4" />
-                Payments
+                <span className="hidden sm:inline">Payments</span>
               </TabsTrigger>
-              <TabsTrigger value="integrations" className="flex items-center gap-2">
+              <TabsTrigger value="integrations" className="flex items-center gap-1 md:gap-2">
                 <Calendar className="h-4 w-4" />
-                Integrations
+                <span className="hidden sm:inline">Integrations</span>
               </TabsTrigger>
-              <TabsTrigger value="ai" className="flex items-center gap-2">
+              <TabsTrigger value="ai" className="flex items-center gap-1 md:gap-2">
                 <Brain className="h-4 w-4" />
-                AI Features
+                <span className="hidden sm:inline">AI Features</span>
               </TabsTrigger>
             </TabsList>
 
@@ -351,7 +351,7 @@ export default function SettingsPage() {
                   <CardDescription>Set your monthly budget and currency preferences</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="monthly-budget">Monthly Budget</Label>
                       <Input

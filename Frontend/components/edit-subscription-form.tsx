@@ -14,6 +14,13 @@ interface EditSubscriptionFormProps {
 }
 
 export function EditSubscriptionForm({ subscription, onSubmit, onCancel }: EditSubscriptionFormProps) {
+  // Extract category name from subscription
+  const getCategoryName = () => {
+    if (subscription.category?.name) return subscription.category.name
+    if (typeof subscription.category === 'string') return subscription.category
+    return "Other"
+  }
+
   const [formData, setFormData] = useState({
     name: subscription.name || "",
     price: subscription.price?.toString() || subscription.cost?.toString() || "",
@@ -24,6 +31,7 @@ export function EditSubscriptionForm({ subscription, onSubmit, onCancel }: EditS
         ? new Date(subscription.nextPayment).toISOString().split('T')[0]
         : "",
     payment_method: subscription.payment_method || subscription.paymentMethod || "card",
+    category: getCategoryName(),
     description: subscription.description || "",
     website_url: subscription.website_url || subscription.website || "",
     status: subscription.status || "active",
@@ -43,11 +51,14 @@ export function EditSubscriptionForm({ subscription, onSubmit, onCancel }: EditS
         billing_date: new Date(formData.billing_date).toISOString(),
         status: formData.status,
         payment_method: formData.payment_method,
+        category: formData.category,
         description: formData.description || null,
         website_url: formData.website_url || null,
       }
 
       await onSubmit(updateData)
+      // Close dialog after successful submission
+      onCancel()
     } catch (error) {
       console.error("Failed to update subscription:", error)
     } finally {
@@ -132,6 +143,28 @@ export function EditSubscriptionForm({ subscription, onSubmit, onCancel }: EditS
       </div>
 
       <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="category">Category</Label>
+          <Select
+            value={formData.category}
+            onValueChange={(value) => setFormData({ ...formData, category: value })}
+          >
+            <SelectTrigger id="category">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Entertainment">Entertainment</SelectItem>
+              <SelectItem value="Gaming">Gaming</SelectItem>
+              <SelectItem value="Software">Software</SelectItem>
+              <SelectItem value="Fitness">Fitness</SelectItem>
+              <SelectItem value="Education">Education</SelectItem>
+              <SelectItem value="News & Media">News & Media</SelectItem>
+              <SelectItem value="Music">Music</SelectItem>
+              <SelectItem value="Other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="status">Status</Label>
           <Select

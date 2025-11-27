@@ -1,58 +1,82 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { googleCalendarService } from "@/lib/google-calendar"
 import { useAuth } from "./auth-provider"
-import { Calendar, CheckCircle, Loader2 } from "lucide-react"
+import { Calendar, CheckCircle, Loader2, X } from "lucide-react"
+import { apiClient } from "@/lib/api-client"
 
 export function GoogleAuthButton() {
   const { user, updateUser } = useAuth()
   const [isConnecting, setIsConnecting] = useState(false)
+  const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "success" | "error">("idle")
+  const [errorMessage, setErrorMessage] = useState<string>("")
+
+  // Check connection status on mount
+  useEffect(() => {
+    const checkStatus = async () => {
+      await googleCalendarService.checkConnectionStatus()
+    }
+    checkStatus()
+  }, [])
 
   const handleGoogleAuth = async () => {
     setIsConnecting(true)
     setConnectionStatus("idle")
+    setErrorMessage("")
 
     try {
-      // Initialize Google Calendar API
-      const success = await googleCalendarService.initializeGoogleCalendar()
+      // Initiate OAuth flow
+      const success = await googleCalendarService.connectGoogleCalendar()
 
       if (success) {
-        // Update user preferences
-        if (user) {
-          const defaultPreferences = {
-            notifications: { email: true, push: true, sms: false, reminderDays: 3 },
-            budget: { monthly: 30000, currency: "KES", checkBalance: false },
-            ai: { categorization: true, predictions: true, recommendations: true },
-            calendar: { googleSync: false }
-          }
-          
-          updateUser({
-            ...user,
-            preferences: {
-              ...defaultPreferences,
-              ...user.preferences,
-              calendar: {
-                ...defaultPreferences.calendar,
-                ...user.preferences?.calendar,
-                googleSync: true,
-              },
-            },
-          })
-        }
-
+        // Refresh user data to get updated preferences
+        const updatedUser = await apiClient.getCurrentUser()
+        updateUser(updatedUser)
+        
         setConnectionStatus("success")
+        
+        // Auto-hide success message after 3 seconds
+        setTimeout(() => {
+          setConnectionStatus("idle")
+        }, 3000)
       } else {
         setConnectionStatus("error")
+        setErrorMessage("Failed to connect to Google Calendar. Please try again.")
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Google Calendar connection failed:", error)
       setConnectionStatus("error")
+      setErrorMessage(error.message || "Failed to connect to Google Calendar. Please check your permissions.")
     } finally {
       setIsConnecting(false)
+    }
+  }
+
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true)
+    setErrorMessage("")
+
+    try {
+      const success = await googleCalendarService.disconnectGoogleCalendar()
+
+      if (success) {
+        // Refresh user data
+        const updatedUser = await apiClient.getCurrentUser()
+        updateUser(updatedUser)
+        
+        setConnectionStatus("idle")
+      } else {
+        setErrorMessage("Failed to disconnect Google Calendar. Please try again.")
+      }
+    } catch (error: any) {
+      console.error("Failed to disconnect Google Calendar:", error)
+      setErrorMessage(error.message || "Failed to disconnect Google Calendar.")
+    } finally {
+      setIsDisconnecting(false)
     }
   }
 
@@ -60,29 +84,47 @@ export function GoogleAuthButton() {
 
   return (
     <div className="space-y-4">
-      <Button
-        onClick={handleGoogleAuth}
-        disabled={isConnecting || isConnected}
-        variant={isConnected ? "secondary" : "default"}
-        className="w-full"
-      >
-        {isConnecting ? (
-          <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Connecting...
-          </>
-        ) : isConnected ? (
-          <>
-            <CheckCircle className="h-4 w-4 mr-2" />
-            Google Calendar Connected
-          </>
-        ) : (
-          <>
-            <Calendar className="h-4 w-4 mr-2" />
-            Connect Google Calendar
-          </>
+      <div className="flex gap-2">
+        <Button
+          onClick={handleGoogleAuth}
+          disabled={isConnecting || isConnected}
+          variant={isConnected ? "secondary" : "default"}
+          className="flex-1"
+        >
+          {isConnecting ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Connecting...
+            </>
+          ) : isConnected ? (
+            <>
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Google Calendar Connected
+            </>
+          ) : (
+            <>
+              <Calendar className="h-4 w-4 mr-2" />
+              Connect Google Calendar
+            </>
+          )}
+        </Button>
+
+        {isConnected && (
+          <Button
+            onClick={handleDisconnect}
+            disabled={isDisconnecting}
+            variant="outline"
+            size="icon"
+            title="Disconnect Google Calendar"
+          >
+            {isDisconnecting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <X className="h-4 w-4" />
+            )}
+          </Button>
         )}
-      </Button>
+      </div>
 
       {connectionStatus === "success" && (
         <Alert className="border-green-200 bg-green-50">
@@ -93,10 +135,19 @@ export function GoogleAuthButton() {
         </Alert>
       )}
 
-      {connectionStatus === "error" && (
+      {(connectionStatus === "error" || errorMessage) && (
         <Alert className="border-red-200 bg-red-50">
           <AlertDescription className="text-red-800">
-            Failed to connect to Google Calendar. Please try again or check your permissions.
+            {errorMessage || "Failed to connect to Google Calendar. Please try again or check your permissions."}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {isConnected && (
+        <Alert className="border-blue-200 bg-blue-50">
+          <Calendar className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-800">
+            Subscription payment reminders will be automatically added to your Google Calendar.
           </AlertDescription>
         </Alert>
       )}

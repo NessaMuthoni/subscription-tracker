@@ -66,12 +66,20 @@ export default function CalendarPage() {
   }
 
   const getSubscriptionsForDate = (date: number) => {
+    const calendarDate = new Date(currentYear, currentMonth, date)
+    
     return subscriptions.filter((sub) => {
+      // Only show subscription if it was created before this date
+      const createdDate = sub.created_at ? new Date(sub.created_at) : null
+      if (createdDate && calendarDate < createdDate) {
+        return false // Don't show subscription before it was created
+      }
+
       if (sub.billing_date) {
         const billingDate = new Date(sub.billing_date)
+        // Match the day of month for recurring payments
         return billingDate.getDate() === date && 
-               billingDate.getMonth() === currentMonth && 
-               billingDate.getFullYear() === currentYear
+               calendarDate >= billingDate // Only show from billing date onwards
       }
       // Fallback for legacy data structure
       return sub.date === date
@@ -188,15 +196,24 @@ export default function CalendarPage() {
                   {subscriptions
                     .filter(sub => sub.billing_date || sub.date)
                     .sort((a, b) => {
-                      const dateA = a.billing_date ? new Date(a.billing_date).getDate() : a.date
-                      const dateB = b.billing_date ? new Date(b.billing_date).getDate() : b.date
+                      const dateA = a.billing_date ? new Date(a.billing_date).getTime() : 0
+                      const dateB = b.billing_date ? new Date(b.billing_date).getTime() : 0
                       return dateA - dateB
                     })
                     .map((sub) => {
-                      const billingDate = sub.billing_date ? new Date(sub.billing_date).getDate() : sub.date
-                      const daysUntil = billingDate - new Date().getDate()
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+                      
+                      const billingDate = sub.billing_date ? new Date(sub.billing_date) : null
+                      if (!billingDate) return null
+                      
+                      billingDate.setHours(0, 0, 0, 0)
+                      
+                      const daysUntil = Math.ceil((billingDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
                       const isOverdue = daysUntil < 0
                       const isDueToday = daysUntil === 0
+
+                      if (!billingDate) return null
 
                       return (
                         <div
@@ -208,7 +225,7 @@ export default function CalendarPage() {
                             <div>
                               <p className="font-medium text-foreground">{sub.name}</p>
                               <p className="text-sm text-muted-foreground">
-                                {monthNames[currentMonth]} {billingDate}, {currentYear}
+                                {billingDate.toLocaleDateString()}
                               </p>
                             </div>
                           </div>

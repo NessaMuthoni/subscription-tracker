@@ -56,21 +56,70 @@ export function SubscriptionForm({ onSubmit, onCancel }: SubscriptionFormProps) 
     return () => clearTimeout(timer)
   }, [formData.name, formData.description])
 
-  // Map AI categories to backend categories
-  const mapCategoryToBackend = (aiCategory: string): string | null => {
+  // Map AI categories to backend categories (must match database categories exactly)
+  const mapCategoryToBackend = (aiCategory: string): string => {
     const mapping: Record<string, string> = {
+      // Exact matches
       "Entertainment": "Entertainment",
+      "Software": "Software",
       "Gaming": "Gaming",
+      "Music": "Music",
+      "Fitness": "Fitness",
+      "Education": "Education",
+      "Other": "Other",
+      
+      // AI variations to backend categories
+      "Streaming": "Entertainment",
+      "Video": "Entertainment",
+      "Movies": "Entertainment",
+      "TV": "Entertainment",
+      "Social": "Entertainment",
+      "Social Media": "Entertainment",
+      
       "Productivity": "Software",
       "Cloud": "Software",
-      "Fitness": "Fitness",
-      "Finance": "Other",
-      "Social": "Entertainment",
-      "Education": "Education",
+      "Cloud Storage": "Software",
+      "Development": "Software",
+      "Design": "Software",
+      "SaaS": "Software",
+      
       "News": "News & Media",
-      "Music": "Music",
+      "Media": "News & Media",
+      "Magazine": "News & Media",
+      "Journalism": "News & Media",
+      
+      "Food": "Food & Delivery",
+      "Delivery": "Food & Delivery",
+      "Restaurant": "Food & Delivery",
+      
+      "Transport": "Transportation",
+      "Travel": "Transportation",
+      "Ride": "Transportation",
+      
+      "Utilities": "Utilities",
+      "Bills": "Utilities",
+      "Internet": "Utilities",
+      "Phone": "Utilities",
+      
+      "Finance": "Other",
+      "Banking": "Other",
+      "Insurance": "Other",
     }
-    return mapping[aiCategory] || null
+    
+    // Case-insensitive lookup
+    const normalizedCategory = aiCategory.trim()
+    const exactMatch = mapping[normalizedCategory]
+    if (exactMatch) return exactMatch
+    
+    // Try case-insensitive match
+    const lowerCategory = normalizedCategory.toLowerCase()
+    for (const [key, value] of Object.entries(mapping)) {
+      if (key.toLowerCase() === lowerCategory) {
+        return value
+      }
+    }
+    
+    return "Other"
   }
 
   const handleAnalyzeService = async () => {
@@ -93,8 +142,11 @@ export function SubscriptionForm({ onSubmit, onCancel }: SubscriptionFormProps) 
     setIsSaving(true)
 
     try {
-      // Map category name to backend category name
-      const backendCategory = formData.category ? mapCategoryToBackend(formData.category) : null
+      // Map category name to backend category name (if AI suggested something different)
+      const backendCategory = formData.category ? mapCategoryToBackend(formData.category) : "Other"
+      
+      console.log("AI suggested category:", formData.category)
+      console.log("Mapped to backend category:", backendCategory)
 
       // Transform form data to match backend API expectations
       const subscriptionData = {
@@ -108,26 +160,20 @@ export function SubscriptionForm({ onSubmit, onCancel }: SubscriptionFormProps) 
         website_url: formData.website || null,
         category: backendCategory, // Send category name - backend will look up the ID
       }
+      
+      console.log("Sending subscription data:", subscriptionData)
 
       // Sync with Google Calendar if enabled
       try {
-        const calendarSubscription = {
-          id: Date.now(),
-          name: formData.name,
-          cost: Number.parseFloat(formData.cost),
-          billingCycle: formData.billingCycle,
-          nextPayment: formData.nextPayment,
-          category: formData.category || aiSuggestion?.category || "Other",
-          status: "active",
-          description: formData.description,
-          website: formData.website,
-          notes: formData.notes,
-          paymentMethod: formData.paymentMethod,
-          autoRenew: formData.autoRenew,
-          aiConfidence: aiSuggestion?.confidence || 0.5,
-          createdAt: new Date().toISOString(),
+        const isConnected = await googleCalendarService.checkConnectionStatus()
+        if (isConnected) {
+          await googleCalendarService.createCalendarEvent({
+            name: formData.name,
+            cost: Number.parseFloat(formData.cost),
+            nextPayment: new Date(formData.nextPayment).toISOString(),
+            description: formData.description || `${formData.name} subscription payment`,
+          })
         }
-        await googleCalendarService.syncSubscriptionReminders([calendarSubscription])
       } catch (error) {
         console.warn("Failed to sync with Google Calendar:", error)
       }
@@ -236,12 +282,24 @@ export function SubscriptionForm({ onSubmit, onCancel }: SubscriptionFormProps) 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="category">Category</Label>
-                  <Input
-                    id="category"
+                  <Select
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    placeholder="Auto-suggested based on service name"
-                  />
+                    onValueChange={(value) => setFormData({ ...formData, category: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Auto-suggested based on service name" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Entertainment">Entertainment</SelectItem>
+                      <SelectItem value="Gaming">Gaming</SelectItem>
+                      <SelectItem value="Software">Software</SelectItem>
+                      <SelectItem value="Fitness">Fitness</SelectItem>
+                      <SelectItem value="Education">Education</SelectItem>
+                      <SelectItem value="News & Media">News & Media</SelectItem>
+                      <SelectItem value="Music">Music</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">

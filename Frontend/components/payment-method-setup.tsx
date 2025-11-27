@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,13 +8,16 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { paymentService } from "@/lib/payment-service"
+import { apiClient } from "@/lib/api-client"
 import { useAuth } from "./auth-provider"
-import { CreditCard, Smartphone, Wallet, CheckCircle, AlertTriangle, Loader2 } from "lucide-react"
+import { CreditCard, Smartphone, Wallet, CheckCircle, AlertTriangle, Loader2, Trash2 } from "lucide-react"
 
 export function PaymentMethodSetup() {
-  const { user, updateUser } = useAuth()
+  const { user } = useAuth()
   const [isConnecting, setIsConnecting] = useState<string | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<Record<string, "success" | "error" | null>>({})
+  const [savedPaymentMethods, setSavedPaymentMethods] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   const [paymentData, setPaymentData] = useState({
     card: {
@@ -31,56 +34,75 @@ export function PaymentMethodSetup() {
     },
   })
 
+  // Fetch saved payment methods on mount
+  useEffect(() => {
+    const fetchPaymentMethods = async () => {
+      try {
+        const methods = await apiClient.getPaymentMethods()
+        setSavedPaymentMethods(methods || [])
+      } catch (error) {
+        console.error('Failed to fetch payment methods:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchPaymentMethods()
+  }, [])
+
+  // Normalize M-Pesa phone number to 9 digits
+  const normalizePhoneNumber = (phone: string): string => {
+    // Remove all non-digit characters
+    let digits = phone.replace(/\D/g, '')
+    
+    // If starts with 254, remove country code
+    if (digits.startsWith('254')) {
+      digits = digits.substring(3)
+    }
+    
+    // If starts with 0, remove the leading 0
+    if (digits.startsWith('0')) {
+      digits = digits.substring(1)
+    }
+    
+    // Return first 9 digits
+    return digits.substring(0, 9)
+  }
+
   const handleConnectPaymentMethod = async (method: "card" | "paypal" | "mpesa") => {
     setIsConnecting(method)
     setConnectionStatus({ ...connectionStatus, [method]: null })
 
     try {
-      let result
-      switch (method) {
-        case "card":
-          // Validate card details and connect
-          result = await paymentService.checkCardBalance(paymentData.card.number)
-          break
-        case "paypal":
-          // Connect PayPal account
-          result = await paymentService.checkPayPalBalance(paymentData.paypal.email)
-          break
-        case "mpesa":
-          // Simulate M-Pesa connection
-          result = await paymentService.checkMpesaBalance(paymentData.mpesa.phoneNumber)
-          break
+      // Prepare payment method data based on type
+      let paymentMethodData: any = { type: method }
+      
+      if (method === "mpesa") {
+        const normalizedPhone = normalizePhoneNumber(paymentData.mpesa.phoneNumber)
+        paymentMethodData.phone_number = normalizedPhone
+      } else if (method === "paypal") {
+        paymentMethodData.account_email = paymentData.paypal.email
+      } else if (method === "card") {
+        paymentMethodData.last4 = paymentData.card.number.slice(-4)
+        paymentMethodData.brand = "Visa" // You might want to detect this
       }
 
-      if (result.success) {
-        // Update user preferences
-        if (user?.preferences?.paymentMethods) {
-          const updatedPaymentMethods = user.preferences.paymentMethods.map((pm) =>
-            pm.type === method ? { ...pm, enabled: true, details: paymentData[method] } : pm,
-          )
+      // Save to database via API
+      const savedMethod = await apiClient.createPaymentMethod(paymentMethodData)
 
-          const defaultPreferences = {
-            notifications: { email: true, push: true, sms: false, reminderDays: 3 },
-            budget: { monthly: 30000, currency: "KES", checkBalance: false },
-            ai: { categorization: true, predictions: true, recommendations: true },
-            calendar: { googleSync: false },
-            paymentMethods: []
-          }
-
-          updateUser({
-            ...user,
-            preferences: {
-              ...defaultPreferences,
-              ...user.preferences,
-              paymentMethods: updatedPaymentMethods,
-            },
-          })
-        }
-
-        setConnectionStatus({ ...connectionStatus, [method]: "success" })
-      } else {
-        setConnectionStatus({ ...connectionStatus, [method]: "error" })
-      }
+      // Update local state
+      setSavedPaymentMethods([...savedPaymentMethods, savedMethod])
+      
+      setConnectionStatus({ ...connectionStatus, [method]: "success" })
+      
+      // Clear form
+      setPaymentData({
+        ...paymentData,
+        [method]: method === "card" 
+          ? { number: "", expiry: "", cvv: "", name: "" }
+          : method === "paypal"
+          ? { email: "" }
+          : { phoneNumber: "" }
+      })
     } catch (error) {
       console.error(`${method} connection failed:`, error)
       setConnectionStatus({ ...connectionStatus, [method]: "error" })
@@ -89,8 +111,21 @@ export function PaymentMethodSetup() {
     }
   }
 
+  const handleDeletePaymentMethod = async (id: string) => {
+    try {
+      await apiClient.deletePaymentMethod(id)
+      setSavedPaymentMethods(savedPaymentMethods.filter(pm => pm.id !== id))
+    } catch (error) {
+      console.error('Failed to delete payment method:', error)
+    }
+  }
+
   const isMethodEnabled = (method: string) => {
-    return user?.preferences?.paymentMethods?.find((pm) => pm.type === method)?.enabled || false
+    return savedPaymentMethods.some((pm) => pm.type === method)
+  }
+
+  const getSavedMethod = (method: string) => {
+    return savedPaymentMethods.find((pm) => pm.type === method)
   }
 
   return (
@@ -103,29 +138,33 @@ export function PaymentMethodSetup() {
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="card" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
             <TabsTrigger value="card" className="flex items-center gap-2">
               <CreditCard className="h-4 w-4" />
-              Card
-            </TabsTrigger>
-            <TabsTrigger value="paypal" className="flex items-center gap-2">
-              <Wallet className="h-4 w-4" />
-              PayPal
+              <span className="hidden sm:inline">Card</span>
             </TabsTrigger>
             <TabsTrigger value="mpesa" className="flex items-center gap-2">
               <Smartphone className="h-4 w-4" />
-              M-Pesa
+              <span className="hidden sm:inline">M-Pesa</span>
+            </TabsTrigger>
+            <TabsTrigger value="paypal" className="flex items-center gap-2">
+              <Wallet className="h-4 w-4" />
+              <span className="hidden sm:inline">PayPal</span>
+            </TabsTrigger>
+            <TabsTrigger value="paystack" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              <span className="hidden sm:inline">Paystack</span>
             </TabsTrigger>
           </TabsList>
 
           {/* Credit/Debit Card */}
           <TabsContent value="card" className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="card-number">Card Number</Label>
                 <Input
                   id="card-number"
-                  placeholder="Enter your card number"
+                  placeholder="1234 5678 9012 3456"
                   value={paymentData.card.number}
                   onChange={(e) =>
                     setPaymentData({
@@ -135,11 +174,11 @@ export function PaymentMethodSetup() {
                   }
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="card-name">Cardholder Name</Label>
                 <Input
                   id="card-name"
-                  placeholder="Enter cardholder name"
+                  placeholder="John Doe"
                   value={paymentData.card.name}
                   onChange={(e) =>
                     setPaymentData({
@@ -167,7 +206,9 @@ export function PaymentMethodSetup() {
                 <Label htmlFor="card-cvv">CVV</Label>
                 <Input
                   id="card-cvv"
-                  placeholder="CVV"
+                  type="password"
+                  placeholder="123"
+                  maxLength={4}
                   value={paymentData.card.cvv}
                   onChange={(e) =>
                     setPaymentData({
@@ -292,6 +333,24 @@ export function PaymentMethodSetup() {
               />
             </div>
 
+            {/* Show saved M-Pesa payment method */}
+            {getSavedMethod("mpesa") && (
+              <Alert className="border-green-200 bg-green-50 dark:bg-green-900/20">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <AlertDescription className="text-green-800 dark:text-green-300 flex items-center justify-between">
+                  <span>Connected: {getSavedMethod("mpesa")?.phone_number || getSavedMethod("mpesa")?.details?.phoneNumber}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeletePaymentMethod(getSavedMethod("mpesa")?.id)}
+                    className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-100"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <Button
               onClick={() => handleConnectPaymentMethod("mpesa")}
               disabled={isConnecting === "mpesa" || isMethodEnabled("mpesa")}
@@ -326,6 +385,75 @@ export function PaymentMethodSetup() {
                 <AlertTriangle className="h-4 w-4 text-red-600" />
                 <AlertDescription className="text-red-800">
                   Failed to connect M-Pesa. Please check your phone number and try again.
+                </AlertDescription>
+              </Alert>
+            )}
+          </TabsContent>
+
+          {/* Paystack */}
+          <TabsContent value="paystack" className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="paystack-email">Paystack Email</Label>
+              <Input
+                id="paystack-email"
+                type="email"
+                placeholder="Enter your Paystack account email"
+                value={paymentData.paypal.email}
+                onChange={(e) =>
+                  setPaymentData({
+                    ...paymentData,
+                    paypal: { ...paymentData.paypal, email: e.target.value },
+                  })
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="paystack-key">API Key (Optional)</Label>
+              <Input
+                id="paystack-key"
+                type="password"
+                placeholder="Enter your Paystack secret key"
+              />
+              <p className="text-xs text-muted-foreground">
+                Get your API key from your Paystack dashboard
+              </p>
+            </div>
+
+            <Button
+              onClick={() => handleConnectPaymentMethod("paypal")}
+              disabled={isConnecting === "paypal" || isMethodEnabled("paystack")}
+              className="w-full"
+            >
+              {isConnecting === "paypal" ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Connecting...
+                </>
+              ) : isMethodEnabled("paystack") ? (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Paystack Connected
+                </>
+              ) : (
+                "Connect Paystack"
+              )}
+            </Button>
+
+            {connectionStatus.paypal === "success" && (
+              <Alert className="border-green-200 bg-green-50">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <AlertDescription className="text-green-800">
+                  Paystack connected successfully! Balance monitoring is now active.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {connectionStatus.paypal === "error" && (
+              <Alert className="border-red-200 bg-red-50">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  Failed to connect Paystack. Please check your details and try again.
                 </AlertDescription>
               </Alert>
             )}

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -14,17 +15,27 @@ import { EditSubscriptionForm } from "@/components/edit-subscription-form"
 import { useNotifications } from "@/components/notification-provider"
 import { useAuth } from "@/components/auth-provider"
 import { apiClient } from "@/lib/api-client"
-import { Search, Plus, MoreHorizontal, Edit, Trash2, Filter, Loader2 } from "lucide-react"
+import { paymentService } from "@/lib/payment-service"
+import { Search, Plus, MoreHorizontal, Edit, Trash2, Filter, Loader2, Wallet, Settings as SettingsIcon } from "lucide-react"
 import { MobileMenu } from "@/components/sidebar"
+import Link from "next/link"
 
 export default function SubscriptionsPage() {
   const { user } = useAuth()
   const [subscriptions, setSubscriptions] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+  const [filterCategory, setFilterCategory] = useState<string>("all")
+  const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>("all")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingSubscription, setEditingSubscription] = useState<any>(null)
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false)
+  const [payingSubscription, setPayingSubscription] = useState<any>(null)
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+  const [paymentPhoneNumber, setPaymentPhoneNumber] = useState("")
+  const [hasSavedPhone, setHasSavedPhone] = useState(false)
   const { addNotification } = useNotifications()
 
   // Fetch subscriptions on component mount
@@ -52,9 +63,17 @@ export default function SubscriptionsPage() {
     fetchSubscriptions()
   }, [user, addNotification])
 
-  const filteredSubscriptions = subscriptions.filter((sub) => 
-    sub.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredSubscriptions = subscriptions.filter((sub) => {
+    const matchesSearch = sub.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = filterCategory === "all" || 
+      (sub.category?.name || sub.category || "Other").toLowerCase() === filterCategory.toLowerCase()
+    const matchesStatus = filterStatus === "all" || 
+      (sub.status || "active").toLowerCase() === filterStatus.toLowerCase()
+    const matchesPaymentMethod = filterPaymentMethod === "all" || 
+      (sub.payment_method || sub.paymentMethod || "card").toLowerCase() === filterPaymentMethod.toLowerCase()
+    
+    return matchesSearch && matchesCategory && matchesStatus && matchesPaymentMethod
+  })
 
   const handleAddSubscription = async (newSubscription: any) => {
     try {
@@ -105,6 +124,99 @@ export default function SubscriptionsPage() {
   const handleEditClick = (subscription: any) => {
     setEditingSubscription(subscription)
     setIsEditDialogOpen(true)
+  }
+
+  const handlePayNowClick = async (subscription: any) => {
+    setPayingSubscription(subscription)
+    setPaymentPhoneNumber("")
+    setHasSavedPhone(false)
+    
+    // Try to get saved phone number from settings
+    try {
+      const paymentMethods = await apiClient.getPaymentMethods()
+      if (paymentMethods && Array.isArray(paymentMethods)) {
+        const mpesaMethod = paymentMethods.find((pm: any) => pm.type === 'mpesa')
+        // Check both phone_number (from backend) and details.phoneNumber (legacy)
+        const phoneNumber = mpesaMethod?.phone_number || mpesaMethod?.details?.phoneNumber
+        if (phoneNumber) {
+          setPaymentPhoneNumber(phoneNumber)
+          setHasSavedPhone(true)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch payment methods:', error)
+    }
+    
+    setIsPaymentDialogOpen(true)
+  }
+
+  const handlePayNow = async () => {
+    if (!payingSubscription) return
+
+    try {
+      setIsProcessingPayment(true)
+
+      // Use phone number from input field
+      const mpesaPhone = paymentPhoneNumber.trim()
+
+      if (!mpesaPhone) {
+        addNotification({
+          type: "system",
+          title: "Phone Number Required",
+          message: "Please enter your M-Pesa phone number",
+          priority: "high",
+        })
+        setIsProcessingPayment(false)
+        return
+      }
+
+      // Validate phone number format (should be 10 digits starting with 0, or 12 digits starting with 254)
+      const phoneDigits = mpesaPhone.replace(/\D/g, '')
+      if (phoneDigits.length < 9 || phoneDigits.length > 12) {
+        addNotification({
+          type: "system",
+          title: "Invalid Phone Number",
+          message: "Please enter a valid M-Pesa phone number (e.g., 0712345678)",
+          priority: "high",
+        })
+        setIsProcessingPayment(false)
+        return
+      }
+
+      const result = await paymentService.initiateMpesaPayment(
+        mpesaPhone,
+        payingSubscription.price,
+        payingSubscription.name
+      )
+
+      if (result.success) {
+        addNotification({
+          type: "payment",
+          title: "Payment Initiated",
+          message: result.message || "Check your phone for the M-Pesa prompt",
+          priority: "high",
+        })
+        setIsPaymentDialogOpen(false)
+        setPayingSubscription(null)
+      } else {
+        addNotification({
+          type: "system",
+          title: "Payment Failed",
+          message: result.error || "Failed to initiate payment",
+          priority: "high",
+        })
+      }
+    } catch (error) {
+      console.error('Payment error:', error)
+      addNotification({
+        type: "system",
+        title: "Payment Error",
+        message: "An error occurred while processing your payment",
+        priority: "high",
+      })
+    } finally {
+      setIsProcessingPayment(false)
+    }
   }
 
   const handleEditSubscription = async (updatedData: any) => {
@@ -180,7 +292,7 @@ export default function SubscriptionsPage() {
           </div>
 
           {/* Search and Filters */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -190,10 +302,42 @@ export default function SubscriptionsPage() {
                 className="pl-10 bg-background border-border"
               />
             </div>
-            <Button variant="outline" className="border-border bg-transparent">
-              <Filter className="h-4 w-4 mr-2" />
-              Filter
-            </Button>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="px-3 py-2 border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="all">All Categories</option>
+              <option value="entertainment">Entertainment</option>
+              <option value="productivity">Productivity</option>
+              <option value="cloud">Cloud</option>
+              <option value="gaming">Gaming</option>
+              <option value="fitness">Fitness</option>
+              <option value="finance">Finance</option>
+              <option value="education">Education</option>
+              <option value="other">Other</option>
+            </select>
+            <select
+              value={filterPaymentMethod}
+              onChange={(e) => setFilterPaymentMethod(e.target.value)}
+              className="px-3 py-2 border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="all">All Payment Methods</option>
+              <option value="card">Card</option>
+              <option value="mpesa">M-Pesa</option>
+              <option value="paypal">PayPal</option>
+              <option value="bank_transfer">Bank Transfer</option>
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-3 py-2 border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
           </div>
 
           {/* Subscriptions Table */}
@@ -260,12 +404,12 @@ export default function SubscriptionsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge className={getCategoryColor(subscription.category?.name || subscription.category || "Other")}>
-                            {subscription.category?.name || subscription.category || "Other"}
+                            {(subscription.category?.name || subscription.category || "Other").charAt(0).toUpperCase() + (subscription.category?.name || subscription.category || "Other").slice(1)}
                           </Badge>
                         </TableCell>
                         <TableCell className="font-medium text-foreground">KSh {subscription.price?.toFixed(2) || subscription.cost?.toFixed(2) || "0.00"}</TableCell>
-                        <TableCell className="text-muted-foreground">{subscription.billingCycle || "Monthly"}</TableCell>
-                        <TableCell>{getPaymentMethodBadge(subscription.paymentMethod || "card")}</TableCell>
+                        <TableCell className="text-muted-foreground capitalize">{subscription.billing_cycle || subscription.billingCycle || "monthly"}</TableCell>
+                        <TableCell>{getPaymentMethodBadge(subscription.payment_method || subscription.paymentMethod || "card")}</TableCell>
                         <TableCell className="text-muted-foreground">
                           {subscription.billing_date ? new Date(subscription.billing_date).toLocaleDateString() : 
                            subscription.nextPayment ? new Date(subscription.nextPayment).toLocaleDateString() : "Not set"}
@@ -286,6 +430,15 @@ export default function SubscriptionsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="bg-popover border-border">
+                              {(subscription.payment_method === 'mpesa' || subscription.paymentMethod === 'mpesa') && (
+                                <DropdownMenuItem 
+                                  className="text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                  onClick={() => handlePayNowClick(subscription)}
+                                >
+                                  <Wallet className="h-4 w-4 mr-2" />
+                                  Pay with M-Pesa
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem 
                                 className="text-foreground hover:bg-accent"
                                 onClick={() => handleEditClick(subscription)}
@@ -338,6 +491,96 @@ export default function SubscriptionsPage() {
                 setEditingSubscription(null)
               }} 
             />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* M-Pesa Payment Dialog */}
+      <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pay with M-Pesa</DialogTitle>
+          </DialogHeader>
+          {payingSubscription && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Subscription</p>
+                <p className="font-semibold">{payingSubscription.name}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Amount</p>
+                <p className="text-2xl font-bold">KSh {payingSubscription.price?.toFixed(2)}</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mpesa-phone" className="flex items-center gap-2">
+                  M-Pesa Phone Number
+                  {hasSavedPhone && (
+                    <Badge variant="secondary" className="text-xs">
+                      Saved
+                    </Badge>
+                  )}
+                </Label>
+                <Input
+                  id="mpesa-phone"
+                  type="tel"
+                  placeholder="0712345678 or 254712345678"
+                  value={paymentPhoneNumber}
+                  onChange={(e) => {
+                    setPaymentPhoneNumber(e.target.value)
+                    setHasSavedPhone(false) // Mark as modified if user changes it
+                  }}
+                  disabled={isProcessingPayment}
+                  className="font-mono"
+                />
+                {hasSavedPhone ? (
+                  <p className="text-xs text-muted-foreground">
+                    Using your saved M-Pesa number from Settings. You can change it here if needed.
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span>No saved number.</span>
+                    <Link 
+                      href="/settings?tab=payment" 
+                      className="text-primary hover:underline inline-flex items-center gap-1"
+                      onClick={() => setIsPaymentDialogOpen(false)}
+                    >
+                      <SettingsIcon className="h-3 w-3" />
+                      Add in Settings
+                    </Link>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsPaymentDialogOpen(false)
+                    setPayingSubscription(null)
+                    setPaymentPhoneNumber("")
+                  }}
+                  disabled={isProcessingPayment}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handlePayNow}
+                  disabled={isProcessingPayment || !paymentPhoneNumber.trim()}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {isProcessingPayment ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Wallet className="mr-2 h-4 w-4" />
+                      Send Payment Prompt
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

@@ -23,11 +23,49 @@ interface BudgetData {
 }
 
 export default function BudgetPage() {
-  const { user } = useAuth()
+  const { user, updateUser } = useAuth()
   const [budgetData, setBudgetData] = useState<BudgetData[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [monthlyBudget, setMonthlyBudget] = useState(300)
   const [editableBudget, setEditableBudget] = useState(300)
   const [isEditing, setIsEditing] = useState(false)
+
+  // Sync monthly budget from user preferences
+  useEffect(() => {
+    const budgetValue = user?.preferences?.budget?.monthly || 300
+    setMonthlyBudget(budgetValue)
+    setEditableBudget(budgetValue)
+  }, [user?.preferences?.budget?.monthly])
+
+  // Save budget changes
+  const handleSaveBudget = () => {
+    if (editableBudget !== monthlyBudget && user && updateUser) {
+      // Create default preferences structure
+      const defaultPreferences = {
+        notifications: { email: true, push: true, sms: false, reminderDays: 3 },
+        budget: { monthly: 300, currency: "KES", checkBalance: false },
+        ai: { categorization: true, predictions: true, recommendations: true },
+        calendar: { googleSync: false },
+      }
+      
+      // Update user preferences with new budget
+      updateUser({
+        ...user,
+        preferences: {
+          ...defaultPreferences,
+          ...user.preferences,
+          budget: {
+            ...defaultPreferences.budget,
+            ...user.preferences?.budget,
+            monthly: editableBudget,
+          }
+        }
+      })
+      
+      setMonthlyBudget(editableBudget)
+    }
+    setIsEditing(false)
+  }
 
   // Fetch budget data
   useEffect(() => {
@@ -43,17 +81,33 @@ export default function BudgetPage() {
         
         const categoryTotals: { [key: string]: number } = {}
         subscriptions?.forEach((sub: any) => {
-          const category = sub.category?.name || "Other"
-          categoryTotals[category] = (categoryTotals[category] || 0) + sub.price
+          const category = (sub.category?.name || sub.category || "Other").toLowerCase()
+          const capitalizedCategory = category.charAt(0).toUpperCase() + category.slice(1)
+          const price = sub.price || sub.cost || 0
+          
+          // Only count active subscriptions
+          if (sub.status === 'active' || !sub.status) {
+            categoryTotals[capitalizedCategory] = (categoryTotals[capitalizedCategory] || 0) + Number(price)
+          }
         })
 
-        const colors = ["#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#f97316"]
-        const budgetCategories: BudgetData[] = Object.entries(categoryTotals).map(([category, spent], index) => ({
-          category,
-          spent,
-          budget: Math.max(spent * 1.2, 50), // Set budget 20% higher than current spending
-          color: colors[index % colors.length]
-        }))
+        const totalSpending = Object.values(categoryTotals).reduce((sum, val) => sum + val, 0)
+        
+        const colors = ["#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#f97316", "#ec4899", "#14b8a6"]
+        const budgetCategories: BudgetData[] = Object.entries(categoryTotals)
+          .sort(([, a], [, b]) => b - a) // Sort by spending descending
+          .map(([category, spent], index) => {
+            // Allocate budget proportionally based on spending
+            const proportion = totalSpending > 0 ? spent / totalSpending : 1 / Object.keys(categoryTotals).length
+            const allocatedBudget = monthlyBudget * proportion
+            
+            return {
+              category,
+              spent: Number(spent.toFixed(2)),
+              budget: Number(allocatedBudget.toFixed(2)),
+              color: colors[index % colors.length]
+            }
+          })
 
         setBudgetData(budgetCategories)
       } catch (error) {
@@ -64,9 +118,7 @@ export default function BudgetPage() {
     }
 
     fetchBudgetData()
-  }, [user])
-
-  const monthlyBudget = user?.preferences?.budget?.monthly || 300
+  }, [user, monthlyBudget])
   const totalSpent = budgetData.reduce((sum, item) => sum + item.spent, 0)
   const budgetUsed = (totalSpent / monthlyBudget) * 100
   const remainingBudget = monthlyBudget - totalSpent
@@ -103,8 +155,15 @@ export default function BudgetPage() {
                       value={editableBudget}
                       onChange={(e) => setEditableBudget(Number(e.target.value))}
                       className="text-2xl font-bold h-auto p-0 border-none bg-transparent"
-                      onBlur={() => setIsEditing(false)}
-                      onKeyDown={(e) => e.key === "Enter" && setIsEditing(false)}
+                      onBlur={handleSaveBudget}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleSaveBudget()
+                        } else if (e.key === "Escape") {
+                          setEditableBudget(monthlyBudget)
+                          setIsEditing(false)
+                        }
+                      }}
                       autoFocus
                     />
                   ) : (

@@ -96,9 +96,13 @@ func main() {
 	payment := protected.Group("/payment")
 	{
 		payment.POST("/mpesa/balance", paymentHandler.CheckMpesaBalance)
+		payment.POST("/mpesa/stk-push", paymentHandler.InitiateMpesaSTKPush)
 		payment.POST("/card/balance", paymentHandler.CheckCardBalance)
 		payment.POST("/paypal/balance", paymentHandler.CheckPayPalBalance)
 	}
+
+	// M-Pesa callback route (public - M-Pesa will call this)
+	api.POST("/payment/mpesa/callback", paymentHandler.MpesaCallback)
 
 	// Analytics routes
 	analytics := protected.Group("/analytics")
@@ -121,9 +125,13 @@ func main() {
 	}
 
 	// Calendar routes
-	calendar := protected.Group("/calendar")
+	calendar := api.Group("/calendar")
 	{
-		calendar.GET("/events", calendarHandler.GetEvents)
+		calendar.GET("/events", middleware.AuthMiddleware(cfg.JWTSecret), calendarHandler.GetEvents)
+		calendar.GET("/google/auth-url", middleware.AuthMiddleware(cfg.JWTSecret), calendarHandler.GoogleAuthURL)
+		calendar.GET("/google/callback", calendarHandler.GoogleCallback)
+		calendar.POST("/events", middleware.AuthMiddleware(cfg.JWTSecret), calendarHandler.CreateCalendarEvent)
+		calendar.DELETE("/google/disconnect", middleware.AuthMiddleware(cfg.JWTSecret), calendarHandler.DisconnectGoogleCalendar)
 	}
 
 	// Start server

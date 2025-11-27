@@ -2,12 +2,12 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: subscription_tracker_db
     environment:
-      POSTGRES_DB: subscription_tracker
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -15,6 +15,12 @@ services:
       - ./backend/migrations:/docker-entrypoint-initdb.d
     networks:
       - subscription_tracker_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d subscription_tracker"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 
   backend:
     build:
@@ -22,16 +28,26 @@ services:
       dockerfile: Dockerfile
     container_name: subscription_tracker_backend
     environment:
-      DATABASE_URL: postgres://postgres:password@postgres:5432/subscription_tracker?sslmode=disable
-      JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
-      PORT: 8080
-      AI_SERVICE_URL: http://ai-service:8000
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: ${PORT}
+      AI_SERVICE_URL: ${AI_SERVICE_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET}
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE}
+      MPESA_PASSKEY: ${MPESA_PASSKEY}
+      MPESA_CALLBACK_URL: ${MPESA_CALLBACK_URL}
     ports:
       - "8080:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - subscription_tracker_network
+    restart: unless-stopped
 
   ai-service:
     build:
@@ -42,20 +58,25 @@ services:
       - "8000:8000"
     networks:
       - subscription_tracker_network
+    restart: unless-stopped
 
   frontend:
     build:
-      context: .
+      context: ./Frontend
       dockerfile: Dockerfile.frontend
     container_name: subscription_tracker_frontend
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_AI_SERVICE_URL: ${NEXT_PUBLIC_AI_SERVICE_URL}
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
     depends_on:
       - backend
+      - ai-service
     networks:
       - subscription_tracker_network
+    restart: unless-stopped
 
 volumes:
   postgres_data:

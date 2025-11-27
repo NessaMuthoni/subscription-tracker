@@ -1,6 +1,9 @@
+import { apiClient } from "./api-client"
+
 // Google Calendar integration for syncing subscription reminders
 export class GoogleCalendarService {
   private static instance: GoogleCalendarService
+  private isConnected: boolean = false
 
   private constructor() {}
 
@@ -11,36 +14,188 @@ export class GoogleCalendarService {
     return GoogleCalendarService.instance
   }
 
-  async initializeGoogleCalendar(): Promise<boolean> {
-    // Initialize Google Calendar API
+  /**
+   * Initiates Google OAuth flow
+   * Opens popup window for user to authorize access
+   */
+  async connectGoogleCalendar(): Promise<boolean> {
     try {
-      // This would normally use Google Calendar API
-      console.log("Initializing Google Calendar API...")
-      return true
+      // Get OAuth URL from backend
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        throw new Error("Not authenticated. Please log in first.")
+      }
+
+      const response = await fetch("http://localhost:8080/api/calendar/google/auth-url", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to get OAuth URL")
+      }
+
+      const data = await response.json()
+      const authUrl = data.authUrl
+
+      // Open OAuth popup
+      const popup = window.open(
+        authUrl,
+        "Google Calendar Authorization",
+        "width=600,height=700,left=200,top=100"
+      )
+
+      // Wait for OAuth callback
+      return new Promise((resolve) => {
+        const interval = setInterval(async () => {
+          if (popup?.closed) {
+            clearInterval(interval)
+            // Check if connection was successful
+            const connected = await this.checkConnectionStatus()
+            this.isConnected = connected
+            resolve(connected)
+          }
+        }, 500)
+      })
     } catch (error) {
-      console.error("Failed to initialize Google Calendar:", error)
+      console.error("Failed to connect Google Calendar:", error)
       return false
     }
   }
 
+  /**
+   * Checks if user has connected Google Calendar
+   */
+  async checkConnectionStatus(): Promise<boolean> {
+    try {
+      const user = await apiClient.getCurrentUser()
+      this.isConnected = user.preferences?.calendar?.googleSync === true
+      return this.isConnected
+    } catch (error) {
+      console.error("Failed to check Google Calendar status:", error)
+      return false
+    }
+  }
+
+  /**
+   * Disconnects Google Calendar integration
+   */
+  async disconnectGoogleCalendar(): Promise<boolean> {
+    try {
+      const response = await fetch("http://localhost:8080/api/calendar/google/disconnect", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to disconnect Google Calendar")
+      }
+
+      this.isConnected = false
+      return true
+    } catch (error) {
+      console.error("Failed to disconnect Google Calendar:", error)
+      return false
+    }
+  }
+
+  /**
+   * Creates a calendar event for a subscription
+   */
+  async createCalendarEvent(subscription: {
+    name: string
+    cost: number
+    nextPayment: string
+    description?: string
+  }): Promise<{ success: boolean; eventId?: string; error?: string }> {
+    try {
+      // Check if connected first
+      if (!this.isConnected) {
+        const connected = await this.checkConnectionStatus()
+        if (!connected) {
+          return {
+            success: false,
+            error: "Google Calendar not connected. Please connect in Settings.",
+          }
+        }
+      }
+
+      const response = await fetch("http://localhost:8080/api/calendar/events", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+        },
+        body: JSON.stringify({
+          subscription_name: subscription.name,
+          amount: subscription.cost,
+          billing_date: subscription.nextPayment,
+          description: subscription.description || "",
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to create calendar event")
+      }
+
+      const data = await response.json()
+      return {
+        success: true,
+        eventId: data.eventId,
+      }
+    } catch (error: any) {
+      console.error("Failed to create calendar event:", error)
+      return {
+        success: false,
+        error: error.message || "Failed to create calendar event",
+      }
+    }
+  }
+
+  /**
+   * Syncs all subscriptions to Google Calendar
+   */
   async syncSubscriptionReminders(subscriptions: any[]): Promise<{
     success: boolean
     syncedCount: number
     errors: string[]
   }> {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
     const errors: string[] = []
     let syncedCount = 0
 
+    // Check if connected
+    if (!this.isConnected) {
+      const connected = await this.checkConnectionStatus()
+      if (!connected) {
+        return {
+          success: false,
+          syncedCount: 0,
+          errors: ["Google Calendar not connected. Please connect in Settings."],
+        }
+      }
+    }
+
     for (const subscription of subscriptions) {
       try {
-        // Create calendar event for each subscription
-        await this.createReminderEvent(subscription)
-        syncedCount++
-      } catch (error) {
-        errors.push(`Failed to sync ${subscription.name}`)
+        const result = await this.createCalendarEvent({
+          name: subscription.name,
+          cost: subscription.cost,
+          nextPayment: subscription.nextPayment,
+          description: subscription.description,
+        })
+
+        if (result.success) {
+          syncedCount++
+        } else {
+          errors.push(`Failed to sync ${subscription.name}: ${result.error}`)
+        }
+      } catch (error: any) {
+        errors.push(`Failed to sync ${subscription.name}: ${error.message}`)
       }
     }
 
@@ -51,48 +206,38 @@ export class GoogleCalendarService {
     }
   }
 
-  private async createReminderEvent(subscription: any): Promise<void> {
-    // Create Google Calendar event
-    const event = {
-      summary: `${subscription.name} Payment Due`,
-      description: `Subscription payment of KSh ${subscription.cost} is due`,
-      start: {
-        dateTime: new Date(subscription.nextPayment).toISOString(),
-      },
-      end: {
-        dateTime: new Date(new Date(subscription.nextPayment).getTime() + 60 * 60 * 1000).toISOString(),
-      },
-      reminders: {
-        useDefault: false,
-        overrides: [
-          { method: "email", minutes: 24 * 60 }, // 1 day before
-          { method: "popup", minutes: 60 }, // 1 hour before
-        ],
-      },
-    }
+  /**
+   * Gets upcoming subscription reminders
+   * Note: This queries the local subscriptions, not Google Calendar
+   */
+  async getUpcomingReminders(): Promise<any[]> {
+    try {
+      const subscriptions = await apiClient.getSubscriptions()
+      
+      // Filter for subscriptions with payments in the next 7 days
+      const now = new Date()
+      const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
 
-    // This would normally call Google Calendar API
-    console.log("Creating calendar event:", event)
+      return subscriptions
+        .filter((sub: any) => {
+          const paymentDate = new Date(sub.nextPayment)
+          return paymentDate >= now && paymentDate <= weekFromNow
+        })
+        .map((sub: any) => ({
+          id: sub.id,
+          title: `${sub.name} Payment Due`,
+          date: new Date(sub.nextPayment),
+          amount: sub.cost,
+        }))
+        .sort((a: any, b: any) => a.date.getTime() - b.date.getTime())
+    } catch (error) {
+      console.error("Failed to get upcoming reminders:", error)
+      return []
+    }
   }
 
-  async getUpcomingReminders(): Promise<any[]> {
-    // Get upcoming subscription reminders from Google Calendar
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    return [
-      {
-        id: "1",
-        title: "Netflix Payment Due",
-        date: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        amount: 15.99,
-      },
-      {
-        id: "2",
-        title: "Spotify Payment Due",
-        date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-        amount: 9.99,
-      },
-    ]
+  getConnectionStatus(): boolean {
+    return this.isConnected
   }
 }
 
