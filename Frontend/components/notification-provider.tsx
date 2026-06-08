@@ -4,6 +4,7 @@ import type React from "react"
 
 import { createContext, useContext, useState, useEffect } from "react"
 import { useAuth } from "./auth-provider"
+import { apiClient } from "@/lib/api-client"
 
 interface Notification {
   id: string
@@ -39,12 +40,22 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (!user) return
 
       try {
-        // TODO: Implement real notification API when backend endpoint is ready
-        // const notifications = await apiClient.getNotifications()
-        // setNotifications(notifications || [])
-        
-        // For now, initialize with empty array
-        setNotifications([])
+        const data = await apiClient.getNotifications()
+        if (data && Array.isArray(data)) {
+          // Transform backend notification format to frontend format
+          const transformedNotifications = data.map((notif: any) => ({
+            id: notif.id,
+            type: notif.type,
+            title: notif.title,
+            message: notif.message,
+            timestamp: new Date(notif.created_at),
+            read: notif.read,
+            priority: notif.priority,
+            actionUrl: notif.action_url,
+            metadata: notif.metadata
+          }))
+          setNotifications(transformedNotifications)
+        }
       } catch (error) {
         console.error('Failed to fetch notifications:', error)
         setNotifications([])
@@ -52,24 +63,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
 
     fetchNotifications()
+    
+    // Poll for new notifications every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => clearInterval(interval)
   }, [user])
-
-  // TODO: Set up real-time notifications via WebSocket or polling when backend supports it
-  // useEffect(() => {
-  //   if (!user) return
-  //   
-  //   const interval = setInterval(async () => {
-  //     // Check for new notifications from backend
-  //     try {
-  //       const newNotifications = await apiClient.getNotifications()
-  //       setNotifications(newNotifications || [])
-  //     } catch (error) {
-  //       console.error('Failed to fetch notifications:', error)
-  //     }
-  //   }, 60000) // Check every minute
-  //   
-  //   return () => clearInterval(interval)
-  // }, [user])
 
   const addNotification = (notification: Omit<Notification, "id" | "timestamp" | "read">) => {
     const newNotification: Notification = {
@@ -92,12 +90,23 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   }
 
-  const markAsRead = (id: string) => {
-    setNotifications((prev) => prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif)))
+  const markAsRead = async (id: string) => {
+    try {
+      await apiClient.markNotificationAsRead(id)
+      setNotifications((prev) => prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif)))
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error)
+    }
   }
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })))
+  const markAllAsRead = async () => {
+    try {
+      // Mark all as read in parallel
+      await Promise.all(notifications.filter(n => !n.read).map(n => apiClient.markNotificationAsRead(n.id)))
+      setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })))
+    } catch (error) {
+      console.error('Failed to mark all as read:', error)
+    }
   }
 
   const deleteNotification = (id: string) => {

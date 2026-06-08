@@ -7,6 +7,7 @@ import (
 	"subscription-tracker/internal/database"
 	"subscription-tracker/internal/handlers"
 	"subscription-tracker/internal/middleware"
+	"subscription-tracker/internal/notifications"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -37,12 +38,48 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
 	userHandler := handlers.NewUserHandler(db)
-	subscriptionHandler := handlers.NewSubscriptionHandler(db)
+	
+	// Initialize notification services first (needed by subscription handler)
+	var emailService *notifications.EmailService
+	var gmailOAuth2Service *notifications.GmailOAuth2Service
+
+	// Choose email provider: Gmail OAuth2 or SMTP
+	if cfg.GmailClientID != "" && cfg.GmailClientSecret != "" && cfg.GmailRefreshToken != "" {
+		log.Println("Initializing Gmail OAuth2 service...")
+		gmailOAuth2Service, err = notifications.NewGmailOAuth2Service(
+			cfg.GmailClientID,
+			cfg.GmailClientSecret,
+			cfg.GmailRefreshToken,
+			cfg.GmailEmail,
+		)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Gmail OAuth2: %v", err)
+		}
+	} else if cfg.SMTPHost != "" {
+		log.Println("Initializing SMTP email service...")
+		emailService = notifications.NewEmailService(
+			cfg.SMTPHost,
+			cfg.SMTPPort,
+			cfg.SMTPUser,
+			cfg.SMTPPassword,
+		)
+	} else {
+		log.Println("No email service configured - email notifications disabled")
+	}
+
+	notificationGenerator := notifications.NewNotificationGenerator(db, emailService, gmailOAuth2Service)
+	
+	// Now initialize handlers that depend on notification generator
+	subscriptionHandler := handlers.NewSubscriptionHandler(db, notificationGenerator)
 	paymentHandler := handlers.NewPaymentHandler(db)
 	analyticsHandler := handlers.NewAnalyticsHandler(db)
 	notificationHandler := handlers.NewNotificationHandler(db)
 	budgetHandler := handlers.NewBudgetHandler(db)
 	calendarHandler := handlers.NewCalendarHandler(db)
+
+	// Start notification scheduler (runs every hour)
+	notificationGenerator.StartScheduler()
+	log.Println("✓ Notification scheduler started")
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
@@ -72,6 +109,8 @@ func main() {
 	{
 		user.GET("/me", userHandler.GetMe)
 		user.PATCH("/me", userHandler.UpdateMe)
+		user.POST("/change-password", userHandler.ChangePassword)
+		user.DELETE("/delete", userHandler.DeleteAccount)
 	}
 
 	// Subscription routes
@@ -99,10 +138,17 @@ func main() {
 		payment.POST("/mpesa/stk-push", paymentHandler.InitiateMpesaSTKPush)
 		payment.POST("/card/balance", paymentHandler.CheckCardBalance)
 		payment.POST("/paypal/balance", paymentHandler.CheckPayPalBalance)
+
+		// Paystack payment routes
+		payment.POST("/paystack/initialize", paymentHandler.InitializePaystackPayment)
+		payment.GET("/paystack/verify/:reference", paymentHandler.VerifyPaystackPayment)
 	}
 
 	// M-Pesa callback route (public - M-Pesa will call this)
 	api.POST("/payment/mpesa/callback", paymentHandler.MpesaCallback)
+
+	// Paystack webhook (public - Paystack will call this)
+	api.POST("/payment/paystack/webhook", paymentHandler.PaystackWebhook)
 
 	// Analytics routes
 	analytics := protected.Group("/analytics")

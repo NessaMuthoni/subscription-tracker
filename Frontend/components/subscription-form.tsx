@@ -32,6 +32,7 @@ export function SubscriptionForm({ onSubmit, onCancel }: SubscriptionFormProps) 
     nextPayment: "",
     category: "",
     website: "",
+    cancellationUrl: "",
     notes: "",
     paymentMethod: "card",
     autoRenew: true,
@@ -158,6 +159,7 @@ export function SubscriptionForm({ onSubmit, onCancel }: SubscriptionFormProps) 
         payment_method: formData.paymentMethod, // Send payment method to backend
         description: formData.description || null,
         website_url: formData.website || null,
+        cancellation_url: formData.cancellationUrl || null,
         category: backendCategory, // Send category name - backend will look up the ID
       }
       
@@ -318,12 +320,6 @@ export function SubscriptionForm({ onSubmit, onCancel }: SubscriptionFormProps) 
                           Credit/Debit Card
                         </div>
                       </SelectItem>
-                      <SelectItem value="paypal">
-                        <div className="flex items-center gap-2">
-                          <Wallet className="h-4 w-4" />
-                          PayPal
-                        </div>
-                      </SelectItem>
                       <SelectItem value="mpesa">
                         <div className="flex items-center gap-2">
                           <Smartphone className="h-4 w-4" />
@@ -344,6 +340,18 @@ export function SubscriptionForm({ onSubmit, onCancel }: SubscriptionFormProps) 
                   onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                   placeholder="https://service-website.com"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="cancellationUrl">Cancellation URL (Optional)</Label>
+                <Input
+                  id="cancellationUrl"
+                  type="url"
+                  value={formData.cancellationUrl || ""}
+                  onChange={(e) => setFormData({ ...formData, cancellationUrl: e.target.value })}
+                  placeholder="https://service-website.com/cancel"
+                />
+                <p className="text-xs text-muted-foreground">URL to cancel this subscription on the provider's website</p>
               </div>
 
               <div className="space-y-2">

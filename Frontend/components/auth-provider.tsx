@@ -12,11 +12,11 @@ interface User {
   email: string
   name?: string
   created_at: string
+
   preferences?: {
     notifications: {
       email: boolean
       push: boolean
-      sms: boolean
       reminderDays: number
     }
     budget: {

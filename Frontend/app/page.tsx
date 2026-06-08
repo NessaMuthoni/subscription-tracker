@@ -132,25 +132,18 @@ function DashboardContent() {
     fetchData()
   }, [user, addNotification])
 
-  // Calculate current month's spending (only subscriptions billed this month)
-  const today = new Date()
-  const currentMonthSpend = subscriptions.reduce((sum, sub) => {
-    const billingDate = sub.billing_date ? new Date(sub.billing_date) : null
-    if (!billingDate) return sum
-    
-    // Only count if billing date is in current month and has passed
-    const isBilledThisMonth = billingDate.getMonth() === today.getMonth() && 
-                              billingDate.getFullYear() === today.getFullYear() &&
-                              billingDate <= today
-    
-    return isBilledThisMonth ? sum + sub.price : sum
+  // Calculate total recurring monthly spend (all active subscriptions)
+  const totalMonthlySpend = subscriptions.reduce((sum, sub) => {
+    // Only count active subscriptions
+    if (sub.status === 'active' || !sub.status) {
+      return sum + sub.price
+    }
+    return sum
   }, 0)
   
-  // Calculate total recurring monthly spend (all active subscriptions)
-  const totalMonthlySpend = subscriptions.reduce((sum, sub) => sum + sub.price, 0)
   const totalYearlySpend = totalMonthlySpend * 12
   const monthlyBudget = user?.preferences?.budget?.monthly || 300
-  const budgetUsed = (currentMonthSpend / monthlyBudget) * 100
+  const budgetUsed = (totalMonthlySpend / monthlyBudget) * 100
 
   const handleAddSubscription = () => {
     addNotification({
@@ -291,7 +284,7 @@ function DashboardContent() {
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground">KSh {currentMonthSpend.toFixed(2)}</div>
+                <div className="text-2xl font-bold text-foreground">KSh {totalMonthlySpend.toFixed(2)}</div>
                 <p className="text-xs text-muted-foreground">Billed this month (Nov)</p>
               </CardContent>
             </Card>
@@ -372,15 +365,18 @@ function DashboardContent() {
                 </Card>
               ) : (
                 subscriptions.slice(0, 6).map((subscription) => {
-                  // Category color mapping
+                  // Category color mapping - matching database categories exactly
                   const categoryColors: Record<string, string> = {
-                    "Entertainment": "bg-purple-500/10 text-purple-500 border-purple-500/20",
-                    "Productivity": "bg-blue-500/10 text-blue-500 border-blue-500/20",
-                    "Cloud": "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
+                    "Entertainment": "bg-red-500/10 text-red-500 border-red-500/20",
+                    "Software": "bg-blue-500/10 text-blue-500 border-blue-500/20",
                     "Gaming": "bg-green-500/10 text-green-500 border-green-500/20",
-                    "Fitness": "bg-orange-500/10 text-orange-500 border-orange-500/20",
-                    "Finance": "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-                    "Education": "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+                    "Music": "bg-amber-500/10 text-amber-500 border-amber-500/20",
+                    "News & Media": "bg-violet-500/10 text-violet-500 border-violet-500/20",
+                    "Fitness": "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
+                    "Food & Delivery": "bg-orange-500/10 text-orange-500 border-orange-500/20",
+                    "Transportation": "bg-lime-500/10 text-lime-500 border-lime-500/20",
+                    "Utilities": "bg-slate-500/10 text-slate-500 border-slate-500/20",
+                    "Education": "bg-teal-500/10 text-teal-500 border-teal-500/20",
                     "Other": "bg-gray-500/10 text-gray-500 border-gray-500/20",
                   }
                   

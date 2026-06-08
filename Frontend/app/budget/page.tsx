@@ -38,20 +38,18 @@ export default function BudgetPage() {
   }, [user?.preferences?.budget?.monthly])
 
   // Save budget changes
-  const handleSaveBudget = () => {
+  const handleSaveBudget = async () => {
     if (editableBudget !== monthlyBudget && user && updateUser) {
-      // Create default preferences structure
-      const defaultPreferences = {
-        notifications: { email: true, push: true, sms: false, reminderDays: 3 },
-        budget: { monthly: 300, currency: "KES", checkBalance: false },
-        ai: { categorization: true, predictions: true, recommendations: true },
-        calendar: { googleSync: false },
-      }
-      
-      // Update user preferences with new budget
-      updateUser({
-        ...user,
-        preferences: {
+      try {
+        // Create default preferences structure
+        const defaultPreferences = {
+          notifications: { email: true, push: true, sms: false, reminderDays: 3 },
+          budget: { monthly: 300, currency: "KES", checkBalance: false },
+          ai: { categorization: true, predictions: true, recommendations: true },
+          calendar: { googleSync: false },
+        }
+        
+        const updatedPreferences = {
           ...defaultPreferences,
           ...user.preferences,
           budget: {
@@ -60,9 +58,30 @@ export default function BudgetPage() {
             monthly: editableBudget,
           }
         }
-      })
-      
-      setMonthlyBudget(editableBudget)
+        
+        // Save to backend
+        const token = localStorage.getItem("auth_token")
+        if (token) {
+          await fetch("http://localhost:8080/api/users/preferences", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(updatedPreferences),
+          })
+        }
+        
+        // Update user preferences locally
+        updateUser({
+          ...user,
+          preferences: updatedPreferences
+        })
+        
+        setMonthlyBudget(editableBudget)
+      } catch (error) {
+        console.error("Failed to save budget:", error)
+      }
     }
     setIsEditing(false)
   }
@@ -94,17 +113,19 @@ export default function BudgetPage() {
         const totalSpending = Object.values(categoryTotals).reduce((sum, val) => sum + val, 0)
         
         const colors = ["#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#f97316", "#ec4899", "#14b8a6"]
+        
+        // Use the current monthly budget value for all categories
+        const currentBudget = user?.preferences?.budget?.monthly || editableBudget || monthlyBudget || 300
+        
         const budgetCategories: BudgetData[] = Object.entries(categoryTotals)
           .sort(([, a], [, b]) => b - a) // Sort by spending descending
           .map(([category, spent], index) => {
-            // Allocate budget proportionally based on spending
-            const proportion = totalSpending > 0 ? spent / totalSpending : 1 / Object.keys(categoryTotals).length
-            const allocatedBudget = monthlyBudget * proportion
+            // Each category shows spending against the total monthly budget
             
             return {
               category,
               spent: Number(spent.toFixed(2)),
-              budget: Number(allocatedBudget.toFixed(2)),
+              budget: currentBudget,
               color: colors[index % colors.length]
             }
           })
@@ -118,7 +139,7 @@ export default function BudgetPage() {
     }
 
     fetchBudgetData()
-  }, [user, monthlyBudget])
+  }, [user, monthlyBudget, editableBudget])
   const totalSpent = budgetData.reduce((sum, item) => sum + item.spent, 0)
   const budgetUsed = (totalSpent / monthlyBudget) * 100
   const remainingBudget = monthlyBudget - totalSpent

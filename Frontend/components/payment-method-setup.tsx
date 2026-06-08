@@ -138,7 +138,7 @@ export function PaymentMethodSetup() {
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="card" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="card" className="flex items-center gap-2">
               <CreditCard className="h-4 w-4" />
               <span className="hidden sm:inline">Card</span>
@@ -146,14 +146,6 @@ export function PaymentMethodSetup() {
             <TabsTrigger value="mpesa" className="flex items-center gap-2">
               <Smartphone className="h-4 w-4" />
               <span className="hidden sm:inline">M-Pesa</span>
-            </TabsTrigger>
-            <TabsTrigger value="paypal" className="flex items-center gap-2">
-              <Wallet className="h-4 w-4" />
-              <span className="hidden sm:inline">PayPal</span>
-            </TabsTrigger>
-            <TabsTrigger value="paystack" className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4" />
-              <span className="hidden sm:inline">Paystack</span>
             </TabsTrigger>
           </TabsList>
 
@@ -259,63 +251,6 @@ export function PaymentMethodSetup() {
             )}
           </TabsContent>
 
-          {/* PayPal */}
-          <TabsContent value="paypal" className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="paypal-email">PayPal Email</Label>
-              <Input
-                id="paypal-email"
-                type="email"
-                placeholder="Enter your PayPal email address"
-                value={paymentData.paypal.email}
-                onChange={(e) =>
-                  setPaymentData({
-                    ...paymentData,
-                    paypal: { ...paymentData.paypal, email: e.target.value },
-                  })
-                }
-              />
-            </div>
-
-            <Button
-              onClick={() => handleConnectPaymentMethod("paypal")}
-              disabled={isConnecting === "paypal" || isMethodEnabled("paypal")}
-              className="w-full"
-            >
-              {isConnecting === "paypal" ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : isMethodEnabled("paypal") ? (
-                <>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  PayPal Connected
-                </>
-              ) : (
-                "Connect PayPal"
-              )}
-            </Button>
-
-            {connectionStatus.paypal === "success" && (
-              <Alert className="border-green-200 bg-green-50">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <AlertDescription className="text-green-800">
-                  PayPal connected successfully! Balance monitoring is now active.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {connectionStatus.paypal === "error" && (
-              <Alert className="border-red-200 bg-red-50">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  Failed to connect PayPal. Please check your email and try again.
-                </AlertDescription>
-              </Alert>
-            )}
-          </TabsContent>
-
           {/* M-Pesa */}
           <TabsContent value="mpesa" className="space-y-4">
             <div className="space-y-2">
@@ -385,75 +320,6 @@ export function PaymentMethodSetup() {
                 <AlertTriangle className="h-4 w-4 text-red-600" />
                 <AlertDescription className="text-red-800">
                   Failed to connect M-Pesa. Please check your phone number and try again.
-                </AlertDescription>
-              </Alert>
-            )}
-          </TabsContent>
-
-          {/* Paystack */}
-          <TabsContent value="paystack" className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="paystack-email">Paystack Email</Label>
-              <Input
-                id="paystack-email"
-                type="email"
-                placeholder="Enter your Paystack account email"
-                value={paymentData.paypal.email}
-                onChange={(e) =>
-                  setPaymentData({
-                    ...paymentData,
-                    paypal: { ...paymentData.paypal, email: e.target.value },
-                  })
-                }
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="paystack-key">API Key (Optional)</Label>
-              <Input
-                id="paystack-key"
-                type="password"
-                placeholder="Enter your Paystack secret key"
-              />
-              <p className="text-xs text-muted-foreground">
-                Get your API key from your Paystack dashboard
-              </p>
-            </div>
-
-            <Button
-              onClick={() => handleConnectPaymentMethod("paypal")}
-              disabled={isConnecting === "paypal" || isMethodEnabled("paystack")}
-              className="w-full"
-            >
-              {isConnecting === "paypal" ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : isMethodEnabled("paystack") ? (
-                <>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Paystack Connected
-                </>
-              ) : (
-                "Connect Paystack"
-              )}
-            </Button>
-
-            {connectionStatus.paypal === "success" && (
-              <Alert className="border-green-200 bg-green-50">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <AlertDescription className="text-green-800">
-                  Paystack connected successfully! Balance monitoring is now active.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {connectionStatus.paypal === "error" && (
-              <Alert className="border-red-200 bg-red-50">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  Failed to connect Paystack. Please check your details and try again.
                 </AlertDescription>
               </Alert>
             )}

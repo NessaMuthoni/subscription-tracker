@@ -28,6 +28,7 @@ build/
 *.test
 *.out
 backend/tmp/
+backend/tools/gmail-token-generator/gmail_token.json
 
 # OS files
 .DS_Store

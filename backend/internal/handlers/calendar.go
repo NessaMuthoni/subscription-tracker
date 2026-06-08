@@ -104,10 +104,26 @@ func (h *CalendarHandler) GoogleCallback(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Google Calendar connected successfully",
-	})
+	// Return HTML that sends message to parent window and closes popup
+	c.Header("Content-Type", "text/html")
+	c.String(http.StatusOK, `
+		<!DOCTYPE html>
+		<html>
+		<head><title>Google Calendar Connected</title></head>
+		<body>
+			<h2>Google Calendar Connected Successfully!</h2>
+			<p>You can close this window now.</p>
+			<script>
+				if (window.opener) {
+					window.opener.postMessage({
+						type: 'GOOGLE_CALENDAR_SUCCESS'
+					}, window.location.origin);
+					setTimeout(() => window.close(), 1000);
+				}
+			</script>
+		</body>
+		</html>
+	`)
 }
 
 func (h *CalendarHandler) exchangeCodeForTokens(code string) (*GoogleTokenResponse, error) {

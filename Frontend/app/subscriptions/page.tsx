@@ -16,7 +16,7 @@ import { useNotifications } from "@/components/notification-provider"
 import { useAuth } from "@/components/auth-provider"
 import { apiClient } from "@/lib/api-client"
 import { paymentService } from "@/lib/payment-service"
-import { Search, Plus, MoreHorizontal, Edit, Trash2, Filter, Loader2, Wallet, Settings as SettingsIcon } from "lucide-react"
+import { Search, Plus, MoreHorizontal, Edit, Trash2, Filter, Loader2, Wallet, Settings as SettingsIcon, CreditCard, ExternalLink } from "lucide-react"
 import { MobileMenu } from "@/components/sidebar"
 import Link from "next/link"
 
@@ -36,6 +36,12 @@ export default function SubscriptionsPage() {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [paymentPhoneNumber, setPaymentPhoneNumber] = useState("")
   const [hasSavedPhone, setHasSavedPhone] = useState(false)
+  const [isCancelUrlDialogOpen, setIsCancelUrlDialogOpen] = useState(false)
+  const [cancelingSubscription, setCancelingSubscription] = useState<any>(null)
+  const [cancelUrlInput, setCancelUrlInput] = useState("")
+  const [isSavingCancelUrl, setIsSavingCancelUrl] = useState(false)
+  const [isBudgetExceededDialogOpen, setIsBudgetExceededDialogOpen] = useState(false)
+  const [budgetExceededData, setBudgetExceededData] = useState<any>(null)
   const { addNotification } = useNotifications()
 
   // Fetch subscriptions on component mount
@@ -98,16 +104,120 @@ export default function SubscriptionsPage() {
     }
   }
 
+  const handleCancelSubscription = async (subscription: any) => {
+    // Check if cancellation URL exists
+    if (subscription.cancellation_url) {
+      // Open the cancellation URL in a new tab
+      window.open(subscription.cancellation_url, '_blank')
+      addNotification({
+        type: "system",
+        title: "Opening Cancellation Page",
+        message: `Redirecting you to cancel ${subscription.name}`,
+        priority: "low",
+      })
+    } else {
+      // Show dialog to add cancellation URL
+      setCancelingSubscription(subscription)
+      setCancelUrlInput("")
+      setIsCancelUrlDialogOpen(true)
+    }
+  }
+
+  const handleSaveCancelUrl = async () => {
+    if (!cancelUrlInput.trim()) {
+      addNotification({
+        type: "system",
+        title: "Invalid URL",
+        message: "Please enter a valid cancellation URL",
+        priority: "high",
+      })
+      return
+    }
+
+    // Validate URL format
+    try {
+      new URL(cancelUrlInput)
+    } catch (error) {
+      addNotification({
+        type: "system",
+        title: "Invalid URL",
+        message: "Please enter a valid URL starting with http:// or https://",
+        priority: "high",
+      })
+      return
+    }
+
+    setIsSavingCancelUrl(true)
+    try {
+      // Update subscription with cancellation URL
+      const updateData = {
+        name: cancelingSubscription.name,
+        price: cancelingSubscription.price,
+        billing_cycle: cancelingSubscription.billing_cycle,
+        billing_date: cancelingSubscription.billing_date,
+        status: cancelingSubscription.status,
+        payment_method: cancelingSubscription.payment_method,
+        category: cancelingSubscription.category?.name || cancelingSubscription.category,
+        description: cancelingSubscription.description,
+        website_url: cancelingSubscription.website_url,
+        cancellation_url: cancelUrlInput,
+      }
+
+      await apiClient.updateSubscription(cancelingSubscription.id, updateData)
+      
+      // Update local state
+      setSubscriptions(subscriptions.map(sub => 
+        sub.id === cancelingSubscription.id 
+          ? { ...sub, cancellation_url: cancelUrlInput }
+          : sub
+      ))
+
+      // Close dialog
+      setIsCancelUrlDialogOpen(false)
+      
+      // Open the cancellation URL
+      window.open(cancelUrlInput, '_blank')
+      
+      addNotification({
+        type: "system",
+        title: "URL Saved",
+        message: `Cancellation URL saved and opened for ${cancelingSubscription.name}`,
+        priority: "low",
+      })
+    } catch (error) {
+      console.error('Failed to save cancellation URL:', error)
+      addNotification({
+        type: "system",
+        title: "Error",
+        message: "Failed to save cancellation URL",
+        priority: "high",
+      })
+    } finally {
+      setIsSavingCancelUrl(false)
+    }
+  }
+
   const handleDeleteSubscription = async (id: string) => {
+    const subscription = subscriptions.find((sub) => sub.id === id)
+    const subscriptionName = subscription?.name || 'Subscription'
+    
+    const confirmDelete = confirm(
+      `⚠️ WARNING: You are about to delete "${subscriptionName}" from the app.\n\n` +
+      `This will ONLY remove it from your tracking list.\n\n` +
+      `To actually cancel the subscription with ${subscriptionName}, you must visit their website separately.\n\n` +
+      `Do you want to proceed with removing it from the app?`
+    )
+    
+    if (!confirmDelete) return
+    
     try {
       await apiClient.deleteSubscription(id)
-      const subscription = subscriptions.find((sub) => sub.id === id)
       setSubscriptions(subscriptions.filter((sub) => sub.id !== id))
 
       addNotification({
         type: "system",
-        title: "Subscription Deleted",
-        message: `${subscription?.name || 'Subscription'} has been deleted`,
+        title: "Removed from App",
+        message: `${subscriptionName} has been removed from your tracking list. Remember to cancel it with the provider if needed.`,
         priority: "low",
       })
     } catch (error) {
@@ -115,7 +225,7 @@ export default function SubscriptionsPage() {
       addNotification({
         type: "system",
         title: "Error",
-        message: "Failed to delete subscription",
+        message: "Failed to remove subscription from app",
         priority: "high",
       })
     }
@@ -189,6 +299,20 @@ export default function SubscriptionsPage() {
         payingSubscription.name
       )
 
+      // Check if budget was exceeded
+      if (!result.success && result.budget_exceeded) {
+        setBudgetExceededData({
+          budget: result.budget,
+          current_spent: result.current_spent,
+          payment_amount: result.payment_amount,
+          subscription_name: payingSubscription.name,
+        })
+        setIsBudgetExceededDialogOpen(true)
+        setIsPaymentDialogOpen(false)
+        setIsProcessingPayment(false)
+        return
+      }
+
       if (result.success) {
         addNotification({
           type: "payment",
@@ -228,20 +352,113 @@ export default function SubscriptionsPage() {
         sub.id === editingSubscription.id ? { ...sub, ...updated } : sub
       ))
       setIsEditDialogOpen(false)
-      setEditingSubscription(null)
-
-      addNotification({
-        type: "system",
-        title: "Subscription Updated",
-        message: `${updatedData.name} has been updated successfully`,
-        priority: "low",
-      })
     } catch (error) {
       console.error('Failed to update subscription:', error)
+    }
+  }
+
+  const handlePaystackPayment = async (subscription: any) => {
+    if (!user?.email) {
       addNotification({
         type: "system",
         title: "Error",
-        message: "Failed to update subscription",
+        message: "User email not found. Please log in again.",
+        priority: "high",
+      })
+      return
+    }
+
+    try {
+      setIsProcessingPayment(true)
+
+      // Initialize Paystack payment
+      const result = await paymentService.initializePaystackPayment(
+        user.email,
+        subscription.price,
+        subscription.name
+      )
+
+      // Check if budget was exceeded
+      if (!result.success && result.budget_exceeded) {
+        setBudgetExceededData({
+          budget: result.budget,
+          current_spent: result.current_spent,
+          payment_amount: result.payment_amount,
+          subscription_name: subscription.name,
+        })
+        setIsBudgetExceededDialogOpen(true)
+        setIsProcessingPayment(false)
+        return
+      }
+
+      if (!result.success || !result.authorization_url) {
+        throw new Error(result.error || "Failed to initialize payment")
+      }
+
+      // Open Paystack payment page in popup
+      const paystackWindow = window.open(
+        result.authorization_url,
+        "paystackPayment",
+        "width=600,height=700,scrollbars=yes,resizable=yes"
+      )
+
+      if (!paystackWindow) {
+        throw new Error("Popup blocked. Please allow popups for this site.")
+      }
+
+      addNotification({
+        type: "payment",
+        title: "Payment Initiated",
+        message: "Complete payment in the popup window",
+        priority: "high",
+      })
+
+      // Listen for payment completion
+      const checkPaymentStatus = setInterval(async () => {
+        if (paystackWindow.closed) {
+          clearInterval(checkPaymentStatus)
+
+          // Verify payment
+          if (result.reference) {
+            const verification = await paymentService.verifyPaystackPayment(result.reference)
+
+            if (verification.success && verification.status === "success") {
+              addNotification({
+                type: "payment",
+                title: "Payment Successful",
+                message: `Payment of ${verification.currency} ${verification.amount} for ${subscription.name} was successful!`,
+                priority: "high",
+              })
+            } else {
+              addNotification({
+                type: "system",
+                title: "Payment Failed",
+                message: verification.error || "Payment was not completed",
+                priority: "high",
+              })
+            }
+          }
+
+          setIsProcessingPayment(false)
+        }
+      }, 1000)
+
+      // Cleanup after 5 minutes
+      setTimeout(() => {
+        clearInterval(checkPaymentStatus)
+        if (!paystackWindow.closed) {
+          paystackWindow.close()
+        }
+        setIsProcessingPayment(false)
+      }, 300000)
+    } catch (error) {
+      console.error("Payment initialization failed:", error)
+      setIsProcessingPayment(false)
+
+      addNotification({
+        type: "system",
+        title: "Payment Error",
+        message: error instanceof Error ? error.message : "Failed to initialize payment",
         priority: "high",
       })
     }
@@ -430,15 +647,20 @@ export default function SubscriptionsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="bg-popover border-border">
-                              {(subscription.payment_method === 'mpesa' || subscription.paymentMethod === 'mpesa') && (
-                                <DropdownMenuItem 
-                                  className="text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
-                                  onClick={() => handlePayNowClick(subscription)}
-                                >
-                                  <Wallet className="h-4 w-4 mr-2" />
-                                  Pay with M-Pesa
-                                </DropdownMenuItem>
-                              )}
+                              <DropdownMenuItem 
+                                className="text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                onClick={() => handlePaystackPayment(subscription)}
+                              >
+                                <CreditCard className="h-4 w-4 mr-2" />
+                                Pay with Card
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                onClick={() => handlePayNowClick(subscription)}
+                              >
+                                <Wallet className="h-4 w-4 mr-2" />
+                                Pay with M-Pesa
+                              </DropdownMenuItem>
                               <DropdownMenuItem 
                                 className="text-foreground hover:bg-accent"
                                 onClick={() => handleEditClick(subscription)}
@@ -447,11 +669,18 @@ export default function SubscriptionsPage() {
                                 Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem
+                                className="text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                                onClick={() => handleCancelSubscription(subscription)}
+                              >
+                                <ExternalLink className="h-4 w-4 mr-2" />
+                                Cancel Subscription
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
                                 className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                                 onClick={() => handleDeleteSubscription(subscription.id)}
                               >
                                 <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
+                                Remove from App
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -579,6 +808,134 @@ export default function SubscriptionsPage() {
                     </>
                   )}
                 </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel URL Dialog */}
+      <Dialog open={isCancelUrlDialogOpen} onOpenChange={setIsCancelUrlDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Cancellation URL</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                No cancellation URL found for <strong>{cancelingSubscription?.name}</strong>.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Please enter the URL where you can cancel this subscription on the provider's website.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cancel-url">Cancellation URL</Label>
+              <Input
+                id="cancel-url"
+                type="url"
+                value={cancelUrlInput}
+                onChange={(e) => setCancelUrlInput(e.target.value)}
+                placeholder="https://example.com/cancel"
+                disabled={isSavingCancelUrl}
+              />
+              <p className="text-xs text-muted-foreground">
+                Example: https://netflix.com/cancelplan or https://spotify.com/account/subscription
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsCancelUrlDialogOpen(false)
+                  setCancelingSubscription(null)
+                  setCancelUrlInput("")
+                }}
+                disabled={isSavingCancelUrl}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveCancelUrl}
+                disabled={isSavingCancelUrl || !cancelUrlInput.trim()}
+              >
+                {isSavingCancelUrl ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save & Open URL"
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Budget Exceeded Dialog */}
+      <Dialog open={isBudgetExceededDialogOpen} onOpenChange={setIsBudgetExceededDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              Budget Exceeded
+            </DialogTitle>
+          </DialogHeader>
+          
+          {budgetExceededData && (
+            <div className="space-y-4">
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <p className="text-sm text-red-800 dark:text-red-200 font-medium mb-2">
+                  Cannot process payment for <strong>{budgetExceededData.subscription_name}</strong>
+                </p>
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  Your active subscriptions exceed your monthly budget limit.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <span className="text-sm font-medium text-muted-foreground">Monthly Budget:</span>
+                  <span className="text-lg font-bold text-foreground">KSh {budgetExceededData.budget?.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between items-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                  <span className="text-sm font-medium text-orange-800 dark:text-orange-200">Active Subscriptions:</span>
+                  <span className="text-lg font-bold text-orange-600 dark:text-orange-400">KSh {budgetExceededData.current_spent?.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                  <span className="text-sm font-medium text-red-800 dark:text-red-200">Over Budget By:</span>
+                  <span className="text-lg font-bold text-red-600 dark:text-red-400">
+                    KSh {(budgetExceededData.current_spent - budgetExceededData.budget)?.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">💡 What you can do:</p>
+                <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1 list-disc list-inside">
+                  <li>Cancel or pause some subscriptions to reduce spending</li>
+                  <li>Increase your monthly budget in Budget Settings</li>
+                  <li>Wait until subscriptions are cancelled with providers</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsBudgetExceededDialogOpen(false)}
+                >
+                  Close
+                </Button>
+                <Link href="/budget">
+                  <Button className="bg-primary hover:bg-primary/90">
+                    Adjust Budget
+                  </Button>
+                </Link>
               </div>
             </div>
           )}

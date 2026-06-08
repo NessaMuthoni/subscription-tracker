@@ -32,6 +32,8 @@ export default function AddSubscriptionPage() {
     nextPayment: "",
     category: "",
     website: "",
+    cancellationUrl: "",
+    paymentMethod: "card",
     notes: "",
   })
 
@@ -71,9 +73,14 @@ export default function AddSubscriptionPage() {
       const subscriptionData = {
         name: formData.name,
         price: price,
+        billing_cycle: formData.billingCycle,
         billing_date: new Date(formData.nextPayment + 'T00:00:00Z').toISOString(), // Convert to full timestamp
-        // category_id: null, // Omit instead of sending null
-        status: "active"
+        status: "active",
+        payment_method: formData.paymentMethod,
+        description: formData.description || null,
+        website_url: formData.website || null,
+        cancellation_url: formData.cancellationUrl || null,
+        category: formData.category || null,
       }
 
       console.log("Sending subscription data:", subscriptionData)
@@ -200,14 +207,47 @@ export default function AddSubscriptionPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="category">Category</Label>
-                        <Input
-                          id="category"
-                          value={formData.category}
-                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                          placeholder="Auto-suggested based on service name"
-                        />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="category">Category</Label>
+                          <Select
+                            value={formData.category}
+                            onValueChange={(value) => setFormData({ ...formData, category: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Auto-suggested based on service name" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Entertainment">Entertainment</SelectItem>
+                              <SelectItem value="Gaming">Gaming</SelectItem>
+                              <SelectItem value="Software">Software</SelectItem>
+                              <SelectItem value="Fitness">Fitness</SelectItem>
+                              <SelectItem value="Education">Education</SelectItem>
+                              <SelectItem value="News & Media">News & Media</SelectItem>
+                              <SelectItem value="Music">Music</SelectItem>
+                              <SelectItem value="Food & Delivery">Food & Delivery</SelectItem>
+                              <SelectItem value="Transportation">Transportation</SelectItem>
+                              <SelectItem value="Utilities">Utilities</SelectItem>
+                              <SelectItem value="Other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="paymentMethod">Payment Method</Label>
+                          <Select
+                            value={formData.paymentMethod}
+                            onValueChange={(value) => setFormData({ ...formData, paymentMethod: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="card">Credit/Debit Card</SelectItem>
+                              <SelectItem value="mpesa">M-Pesa</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
 
                       <div className="space-y-2">
@@ -219,6 +259,18 @@ export default function AddSubscriptionPage() {
                           onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                           placeholder="https://service-website.com"
                         />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="cancellationUrl">Cancellation URL (Optional)</Label>
+                        <Input
+                          id="cancellationUrl"
+                          type="url"
+                          value={formData.cancellationUrl}
+                          onChange={(e) => setFormData({ ...formData, cancellationUrl: e.target.value })}
+                          placeholder="https://service-website.com/cancel"
+                        />
+                        <p className="text-xs text-muted-foreground">URL to cancel this subscription on the provider's website</p>
                       </div>
 
                       <div className="space-y-2">

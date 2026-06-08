@@ -7,10 +7,10 @@ import (
 )
 
 type UserPreferences struct {
-	Budget        *BudgetPreferences        `json:"budget,omitempty"`
-	Notifications *NotificationPreferences  `json:"notifications,omitempty"`
-	AI            *AIPreferences            `json:"ai,omitempty"`
-	Calendar      *CalendarPreferences      `json:"calendar,omitempty"`
+	Budget        *BudgetPreferences       `json:"budget,omitempty"`
+	Notifications *NotificationPreferences `json:"notifications,omitempty"`
+	AI            *AIPreferences           `json:"ai,omitempty"`
+	Calendar      *CalendarPreferences     `json:"calendar,omitempty"`
 }
 
 type BudgetPreferences struct {
@@ -22,7 +22,6 @@ type BudgetPreferences struct {
 type NotificationPreferences struct {
 	Email        bool `json:"email"`
 	Push         bool `json:"push"`
-	SMS          bool `json:"sms"`
 	ReminderDays int  `json:"reminderDays"`
 }
 
@@ -54,20 +53,21 @@ type Category struct {
 }
 
 type Subscription struct {
-	ID            uuid.UUID  `json:"id" db:"id"`
-	UserID        uuid.UUID  `json:"user_id" db:"user_id"`
-	Name          string     `json:"name" db:"name"`
-	Price         float64    `json:"price" db:"price"`
-	BillingCycle  string     `json:"billing_cycle" db:"billing_cycle"`
-	BillingDate   time.Time  `json:"billing_date" db:"billing_date"`
-	CategoryID    *uuid.UUID `json:"category_id" db:"category_id"`
-	Status        string     `json:"status" db:"status"`
-	PaymentMethod *string    `json:"payment_method" db:"payment_method"`
-	Description   *string    `json:"description" db:"description"`
-	WebsiteURL    *string    `json:"website_url" db:"website_url"`
-	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
-	Category      *Category  `json:"category,omitempty"`
+	ID              uuid.UUID  `json:"id" db:"id"`
+	UserID          uuid.UUID  `json:"user_id" db:"user_id"`
+	Name            string     `json:"name" db:"name"`
+	Price           float64    `json:"price" db:"price"`
+	BillingCycle    string     `json:"billing_cycle" db:"billing_cycle"`
+	BillingDate     time.Time  `json:"billing_date" db:"billing_date"`
+	CategoryID      *uuid.UUID `json:"category_id" db:"category_id"`
+	Status          string     `json:"status" db:"status"`
+	PaymentMethod   *string    `json:"payment_method" db:"payment_method"`
+	Description     *string    `json:"description" db:"description"`
+	WebsiteURL      *string    `json:"website_url" db:"website_url"`
+	CancellationURL *string    `json:"cancellation_url" db:"cancellation_url"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+	Category        *Category  `json:"category,omitempty"`
 }
 
 type PaymentMethod struct {
@@ -76,9 +76,9 @@ type PaymentMethod struct {
 	Type             string     `json:"type" db:"type"` // credit_card, debit_card, mpesa, paypal, paystack, bank_transfer
 	Last4            *string    `json:"last4" db:"last4"`
 	Brand            *string    `json:"brand" db:"brand"`
-	PhoneNumber      *string    `json:"phone_number,omitempty" db:"phone_number"`       // For M-Pesa
-	AccountEmail     *string    `json:"account_email,omitempty" db:"account_email"`     // For PayPal/Paystack
-	APIKeyEncrypted  *string    `json:"-" db:"api_key_encrypted"`                       // For Paystack (never exposed)
+	PhoneNumber      *string    `json:"phone_number,omitempty" db:"phone_number"`   // For M-Pesa
+	AccountEmail     *string    `json:"account_email,omitempty" db:"account_email"` // For PayPal/Paystack
+	APIKeyEncrypted  *string    `json:"-" db:"api_key_encrypted"`                   // For Paystack (never exposed)
 	LastBalanceCheck *time.Time `json:"last_balance_check,omitempty" db:"last_balance_check"`
 	BalanceCents     *int64     `json:"balance_cents,omitempty" db:"balance_cents"`
 	Currency         *string    `json:"currency,omitempty" db:"currency"`
@@ -89,7 +89,10 @@ type PaymentMethod struct {
 type Notification struct {
 	ID        uuid.UUID `json:"id" db:"id"`
 	UserID    uuid.UUID `json:"user_id" db:"user_id"`
+	Title     string    `json:"title" db:"title"`
 	Message   string    `json:"message" db:"message"`
+	Type      string    `json:"type" db:"type"`         // payment, budget, ai_insight, system
+	Priority  string    `json:"priority" db:"priority"` // low, medium, high
 	Read      bool      `json:"read" db:"read"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
@@ -129,29 +132,31 @@ type UpdateUserRequest struct {
 }
 
 type CreateSubscriptionRequest struct {
-	Name          string     `json:"name" binding:"required"`
-	Price         float64    `json:"price" binding:"required"`
-	BillingCycle  string     `json:"billing_cycle" binding:"required"`
-	BillingDate   time.Time  `json:"billing_date" binding:"required"`
-	CategoryID    *uuid.UUID `json:"category_id"`
-	Category      *string    `json:"category"` // Category name (will be converted to ID)
-	Status        string     `json:"status" binding:"required"`
-	PaymentMethod *string    `json:"payment_method"`
-	Description   *string    `json:"description"`
-	WebsiteURL    *string    `json:"website_url"`
+	Name            string     `json:"name" binding:"required"`
+	Price           float64    `json:"price" binding:"required"`
+	BillingCycle    string     `json:"billing_cycle" binding:"required"`
+	BillingDate     time.Time  `json:"billing_date" binding:"required"`
+	CategoryID      *uuid.UUID `json:"category_id"`
+	Category        *string    `json:"category"` // Category name (will be converted to ID)
+	Status          string     `json:"status" binding:"required"`
+	PaymentMethod   *string    `json:"payment_method"`
+	Description     *string    `json:"description"`
+	WebsiteURL      *string    `json:"website_url"`
+	CancellationURL *string    `json:"cancellation_url"`
 }
 
 type UpdateSubscriptionRequest struct {
-	Name          *string    `json:"name"`
-	Price         *float64   `json:"price"`
-	BillingCycle  *string    `json:"billing_cycle"`
-	BillingDate   *time.Time `json:"billing_date"`
-	CategoryID    *uuid.UUID `json:"category_id"`
-	Category      *string    `json:"category"` // Category name (will be converted to ID)
-	Status        *string    `json:"status"`
-	PaymentMethod *string    `json:"payment_method"`
-	Description   *string    `json:"description"`
-	WebsiteURL    *string    `json:"website_url"`
+	Name            *string    `json:"name"`
+	Price           *float64   `json:"price"`
+	BillingCycle    *string    `json:"billing_cycle"`
+	BillingDate     *time.Time `json:"billing_date"`
+	CategoryID      *uuid.UUID `json:"category_id"`
+	Category        *string    `json:"category"` // Category name (will be converted to ID)
+	Status          *string    `json:"status"`
+	PaymentMethod   *string    `json:"payment_method"`
+	Description     *string    `json:"description"`
+	WebsiteURL      *string    `json:"website_url"`
+	CancellationURL *string    `json:"cancellation_url"`
 }
 
 type CreatePaymentMethodRequest struct {

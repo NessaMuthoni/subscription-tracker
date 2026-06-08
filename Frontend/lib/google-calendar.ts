@@ -47,17 +47,45 @@ export class GoogleCalendarService {
         "width=600,height=700,left=200,top=100"
       )
 
-      // Wait for OAuth callback
+      if (!popup) {
+        throw new Error('Popup was blocked. Please allow popups for this site.')
+      }
+
+      // Wait for OAuth callback using message listener instead of popup.closed
       return new Promise((resolve) => {
-        const interval = setInterval(async () => {
-          if (popup?.closed) {
-            clearInterval(interval)
-            // Check if connection was successful
+        let hasResolved = false
+
+        const messageListener = async (event: MessageEvent) => {
+          if (event.origin !== window.location.origin) return
+          
+          if (event.data.type === 'GOOGLE_CALENDAR_SUCCESS' || event.data.type === 'CALENDAR_CONNECTED') {
+            if (!hasResolved) {
+              hasResolved = true
+              window.removeEventListener('message', messageListener)
+              try {
+                popup.close()
+              } catch (e) {
+                // Ignore if popup is already closed
+              }
+              const connected = await this.checkConnectionStatus()
+              this.isConnected = connected
+              resolve(connected)
+            }
+          }
+        }
+
+        window.addEventListener('message', messageListener)
+
+        // Fallback: Check connection status after 2 minutes (in case popup was closed manually)
+        setTimeout(async () => {
+          if (!hasResolved) {
+            hasResolved = true
+            window.removeEventListener('message', messageListener)
             const connected = await this.checkConnectionStatus()
             this.isConnected = connected
             resolve(connected)
           }
-        }, 500)
+        }, 120000)
       })
     } catch (error) {
       console.error("Failed to connect Google Calendar:", error)

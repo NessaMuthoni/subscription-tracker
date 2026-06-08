@@ -40,8 +40,8 @@ func (h *PaymentHandler) GetPaymentMethods(c *gin.Context) {
 	var paymentMethods []models.PaymentMethod
 	for rows.Next() {
 		var pm models.PaymentMethod
-		err := rows.Scan(&pm.ID, &pm.UserID, &pm.Type, &pm.Last4, &pm.Brand, 
-			&pm.PhoneNumber, &pm.AccountEmail, &pm.LastBalanceCheck, 
+		err := rows.Scan(&pm.ID, &pm.UserID, &pm.Type, &pm.Last4, &pm.Brand,
+			&pm.PhoneNumber, &pm.AccountEmail, &pm.LastBalanceCheck,
 			&pm.BalanceCents, &pm.Currency, &pm.IsDefault, &pm.CreatedAt)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to scan payment method"})
@@ -68,12 +68,12 @@ func (h *PaymentHandler) CreatePaymentMethod(c *gin.Context) {
 
 	// Validate payment method type
 	validTypes := map[string]bool{
-		"credit_card":    true,
-		"debit_card":     true,
-		"mpesa":          true,
-		"paypal":         true,
-		"paystack":       true,
-		"bank_transfer":  true,
+		"credit_card":   true,
+		"debit_card":    true,
+		"mpesa":         true,
+		"paypal":        true,
+		"paystack":      true,
+		"bank_transfer": true,
 	}
 	if !validTypes[req.Type] {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -106,7 +106,7 @@ func (h *PaymentHandler) CreatePaymentMethod(c *gin.Context) {
 	_, err := h.db.Exec(
 		`INSERT INTO payment_methods (id, user_id, type, last4, brand, phone_number, account_email, api_key_encrypted, currency) 
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		paymentMethodID, userID.(uuid.UUID), req.Type, req.Last4, req.Brand, 
+		paymentMethodID, userID.(uuid.UUID), req.Type, req.Last4, req.Brand,
 		req.PhoneNumber, req.AccountEmail, encryptedKey, currency,
 	)
 	if err != nil {
@@ -120,8 +120,8 @@ func (h *PaymentHandler) CreatePaymentMethod(c *gin.Context) {
 		        last_balance_check, balance_cents, currency, is_default, created_at 
 		 FROM payment_methods WHERE id = $1`,
 		paymentMethodID,
-	).Scan(&pm.ID, &pm.UserID, &pm.Type, &pm.Last4, &pm.Brand, 
-		&pm.PhoneNumber, &pm.AccountEmail, &pm.LastBalanceCheck, 
+	).Scan(&pm.ID, &pm.UserID, &pm.Type, &pm.Last4, &pm.Brand,
+		&pm.PhoneNumber, &pm.AccountEmail, &pm.LastBalanceCheck,
 		&pm.BalanceCents, &pm.Currency, &pm.IsDefault, &pm.CreatedAt)
 
 	if err != nil {

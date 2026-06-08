@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations:/docker-entrypoint-initdb.d
@@ -32,6 +32,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       PORT: ${PORT}
       AI_SERVICE_URL: ${AI_SERVICE_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
@@ -40,6 +41,13 @@ services:
       MPESA_SHORTCODE: ${MPESA_SHORTCODE}
       MPESA_PASSKEY: ${MPESA_PASSKEY}
       MPESA_CALLBACK_URL: ${MPESA_CALLBACK_URL}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN}
+      GMAIL_EMAIL: ${GMAIL_EMAIL}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
+      PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY}
+      PAYSTACK_CALLBACK_URL: ${PAYSTACK_CALLBACK_URL}
     ports:
       - "8080:8080"
     depends_on:

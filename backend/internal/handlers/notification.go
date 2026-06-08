@@ -25,10 +25,13 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.db.Query(
-		"SELECT id, user_id, message, read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC",
-		userID.(uuid.UUID),
-	)
+	rows, err := h.db.Query(`
+		SELECT id, user_id, title, message, type, priority, read, created_at 
+		FROM notifications 
+		WHERE user_id = $1 
+		ORDER BY created_at DESC
+		LIMIT 50
+	`, userID.(uuid.UUID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Database error"})
 		return
@@ -38,7 +41,16 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 	var notifications []models.Notification
 	for rows.Next() {
 		var notification models.Notification
-		err := rows.Scan(&notification.ID, &notification.UserID, &notification.Message, &notification.Read, &notification.CreatedAt)
+		err := rows.Scan(
+			&notification.ID,
+			&notification.UserID,
+			&notification.Title,
+			&notification.Message,
+			&notification.Type,
+			&notification.Priority,
+			&notification.Read,
+			&notification.CreatedAt,
+		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "Failed to scan notification"})
 			return

@@ -199,6 +199,10 @@ export class PaymentService {
     message: string
     checkoutRequestId?: string
     error?: string
+    budget_exceeded?: boolean
+    budget?: number
+    current_spent?: number
+    payment_amount?: number
   }> {
     try {
       const formattedPhone = this.formatMpesaPhoneNumber(phoneNumber)
@@ -220,7 +224,21 @@ export class PaymentService {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to initiate M-Pesa payment')
+        
+        // Handle budget exceeded error (402 Payment Required)
+        if (response.status === 402 && errorData.would_exceed) {
+          return {
+            success: false,
+            message: errorData.message || 'Budget exceeded',
+            error: errorData.message,
+            budget_exceeded: true,
+            budget: errorData.budget,
+            current_spent: errorData.current_spent,
+            payment_amount: errorData.payment_amount,
+          }
+        }
+        
+        throw new Error(errorData.error || errorData.message || 'Failed to initiate M-Pesa payment')
       }
 
       const data = await response.json()
@@ -234,6 +252,119 @@ export class PaymentService {
       return {
         success: false,
         message: 'Failed to initiate payment',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      }
+    }
+  }
+
+  // Initialize Paystack payment for card transactions
+  async initializePaystackPayment(
+    email: string,
+    amount: number,
+    subscriptionName: string
+  ): Promise<{
+    success: boolean
+    message: string
+    authorization_url?: string
+    reference?: string
+    error?: string
+    budget_exceeded?: boolean
+    budget?: number
+    current_spent?: number
+    payment_amount?: number
+  }> {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      const reference = `SUB_${Date.now()}_${Math.random().toString(36).substring(7)}`
+      
+      const response = await fetch(`${apiUrl}/payment/paystack/initialize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        },
+        body: JSON.stringify({
+          email,
+          amount,
+          reference,
+          subscriptionName,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        
+        // Handle budget exceeded error (402 Payment Required)
+        if (response.status === 402 && errorData.would_exceed) {
+          return {
+            success: false,
+            message: errorData.message || 'Budget exceeded',
+            error: errorData.message,
+            budget_exceeded: true,
+            budget: errorData.budget,
+            current_spent: errorData.current_spent,
+            payment_amount: errorData.payment_amount,
+          }
+        }
+        
+        throw new Error(errorData.error || errorData.message || 'Failed to initialize Paystack payment')
+      }
+
+      const data = await response.json()
+      return {
+        success: true,
+        message: data.message || 'Payment initialized successfully',
+        authorization_url: data.authorization_url,
+        reference: data.reference,
+      }
+    } catch (error) {
+      console.error('Paystack initialization failed:', error)
+      return {
+        success: false,
+        message: 'Failed to initialize payment',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      }
+    }
+  }
+
+  // Verify Paystack payment
+  async verifyPaystackPayment(reference: string): Promise<{
+    success: boolean
+    message: string
+    amount?: number
+    currency?: string
+    status?: string
+    error?: string
+  }> {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+      
+      const response = await fetch(`${apiUrl}/payment/paystack/verify/${reference}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to verify payment')
+      }
+
+      const data = await response.json()
+      return {
+        success: true,
+        message: data.message || 'Payment verified successfully',
+        amount: data.amount,
+        currency: data.currency,
+        status: data.status,
+      }
+    } catch (error) {
+      console.error('Paystack verification failed:', error)
+      return {
+        success: false,
+        message: 'Failed to verify payment',
         error: error instanceof Error ? error.message : 'Unknown error occurred',
       }
     }

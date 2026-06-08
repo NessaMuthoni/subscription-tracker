@@ -34,10 +34,50 @@ type STKPushResponse struct {
 
 // InitiateMpesaSTKPush handles M-Pesa STK Push payment initiation
 func (h *PaymentHandler) InitiateMpesaSTKPush(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{Error: "User not authenticated"})
+		return
+	}
+
 	var req STKPushRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: err.Error()})
 		return
+	}
+
+	// Check user's budget before proceeding with payment
+	var budget models.Budget
+	err := h.db.QueryRow(
+		"SELECT id, user_id, amount, period, created_at FROM budgets WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
+		userID,
+	).Scan(&budget.ID, &budget.UserID, &budget.Amount, &budget.Period, &budget.CreatedAt)
+
+	if err == nil {
+		// Budget exists, check if current active subscriptions exceed budget
+		var totalSpent float64
+		err = h.db.QueryRow(`
+			SELECT COALESCE(SUM(price), 0) 
+			FROM subscriptions 
+			WHERE user_id = $1 AND status = 'active'
+		`, userID).Scan(&totalSpent)
+
+		if err == nil {
+			// Check if total active subscriptions already exceed budget
+			// Note: totalSpent already includes the subscription being paid for
+			if totalSpent > budget.Amount {
+				c.JSON(http.StatusPaymentRequired, gin.H{
+					"success":        false,
+					"error":          "Budget exceeded",
+					"message":        fmt.Sprintf("Cannot process payment - your active subscriptions (KSh %.2f) exceed your monthly budget of KSh %.2f", totalSpent, budget.Amount),
+					"budget":         budget.Amount,
+					"current_spent":  totalSpent,
+					"payment_amount": req.Amount,
+					"would_exceed":   true,
+				})
+				return
+			}
+		}
 	}
 
 	// Get M-Pesa credentials from environment

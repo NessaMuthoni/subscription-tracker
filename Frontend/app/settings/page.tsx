@@ -19,13 +19,18 @@ import { useNotifications } from "@/components/notification-provider"
 import { useSearchParams } from "next/navigation"
 import { User, Bell, Brain, CreditCard, Save, CheckCircle, AlertTriangle, Calendar, Wallet } from "lucide-react"
 import { MobileMenu } from "@/components/sidebar"
+import { apiClient } from "@/lib/api-client"
 
 export default function SettingsPage() {
-  const { user, updateUser } = useAuth()
+  const { user, updateUser, logout } = useAuth()
   const { addNotification } = useNotifications()
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "profile")
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [passwordData, setPasswordData] = useState({ current: "", new: "", confirm: "" })
+  const [deleteConfirmation, setDeleteConfirmation] = useState("")
 
   const [settings, setSettings] = useState({
     profile: {
@@ -35,7 +40,6 @@ export default function SettingsPage() {
     notifications: {
       email: user?.preferences?.notifications?.email ?? true,
       push: user?.preferences?.notifications?.push ?? true,
-      sms: user?.preferences?.notifications?.sms ?? false,
       reminderDays: user?.preferences?.notifications?.reminderDays ?? 3,
     },
     budget: {
@@ -110,24 +114,93 @@ export default function SettingsPage() {
     })
   }
 
-  const handleChangePassword = () => {
-    // TODO: Implement password change functionality
-    addNotification({
-      type: "system",
-      title: "Password Change",
-      message: "Password change functionality will be implemented soon",
-      priority: "low",
-    })
+  const handleChangePassword = async () => {
+    if (!passwordData.current || !passwordData.new || !passwordData.confirm) {
+      addNotification({
+        type: "system",
+        title: "Validation Error",
+        message: "Please fill in all password fields",
+        priority: "medium",
+      })
+      return
+    }
+
+    if (passwordData.new !== passwordData.confirm) {
+      addNotification({
+        type: "system",
+        title: "Validation Error",
+        message: "New passwords do not match",
+        priority: "medium",
+      })
+      return
+    }
+
+    if (passwordData.new.length < 8) {
+      addNotification({
+        type: "system",
+        title: "Validation Error",
+        message: "Password must be at least 8 characters",
+        priority: "medium",
+      })
+      return
+    }
+
+    try {
+      await apiClient.changePassword({
+        currentPassword: passwordData.current,
+        newPassword: passwordData.new,
+      })
+      
+      addNotification({
+        type: "system",
+        title: "Password Changed",
+        message: "Your password has been changed successfully",
+        priority: "low",
+      })
+      setShowPasswordDialog(false)
+      setPasswordData({ current: "", new: "", confirm: "" })
+    } catch (error: any) {
+      addNotification({
+        type: "system",
+        title: "Error",
+        message: error.message || "Failed to change password",
+        priority: "high",
+      })
+    }
   }
 
-  const handleEnable2FA = () => {
-    // TODO: Implement 2FA functionality
-    addNotification({
-      type: "system",
-      title: "Two-Factor Authentication",
-      message: "2FA setup functionality will be implemented soon",
-      priority: "low",
-    })
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmation !== "DELETE") {
+      addNotification({
+        type: "system",
+        title: "Validation Error",
+        message: 'Please type "DELETE" to confirm',
+        priority: "medium",
+      })
+      return
+    }
+
+    try {
+      await apiClient.deleteAccount()
+      
+      addNotification({
+        type: "system",
+        title: "Account Deleted",
+        message: "Your account has been permanently deleted",
+        priority: "high",
+      })
+      setTimeout(() => {
+        logout()
+        window.location.href = '/auth/login'
+      }, 2000)
+    } catch (error) {
+      addNotification({
+        type: "system",
+        title: "Error",
+        message: "Failed to delete account",
+        priority: "high",
+      })
+    }
   }
 
   return (
@@ -244,14 +317,128 @@ export default function SettingsPage() {
                   <CardDescription>Manage your password and security settings</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <Button variant="outline" onClick={handleChangePassword}>
-                    Change Password
-                  </Button>
-                  <Button variant="outline" onClick={handleEnable2FA}>
-                    Enable Two-Factor Authentication
-                  </Button>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Password</p>
+                      <p className="text-sm text-muted-foreground">Change your account password</p>
+                    </div>
+                    <Button variant="outline" onClick={() => setShowPasswordDialog(true)}>
+                      Change Password
+                    </Button>
+                  </div>
+                  
+                  <Separator />
                 </CardContent>
               </Card>
+
+              <Card className="border-destructive">
+                <CardHeader>
+                  <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                  <CardDescription>Irreversible account actions</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Delete Account</p>
+                      <p className="text-sm text-muted-foreground">Permanently delete your account and all data</p>
+                    </div>
+                    <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
+                      Delete Account
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Password Change Dialog */}
+              {showPasswordDialog && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <Card className="w-full max-w-md mx-4">
+                    <CardHeader>
+                      <CardTitle>Change Password</CardTitle>
+                      <CardDescription>Enter your current and new password</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="current-password">Current Password</Label>
+                        <Input
+                          id="current-password"
+                          type="password"
+                          value={passwordData.current}
+                          onChange={(e) => setPasswordData({ ...passwordData, current: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="new-password">New Password</Label>
+                        <Input
+                          id="new-password"
+                          type="password"
+                          value={passwordData.new}
+                          onChange={(e) => setPasswordData({ ...passwordData, new: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="confirm-password">Confirm New Password</Label>
+                        <Input
+                          id="confirm-password"
+                          type="password"
+                          value={passwordData.confirm}
+                          onChange={(e) => setPasswordData({ ...passwordData, confirm: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1" onClick={() => setShowPasswordDialog(false)}>
+                          Cancel
+                        </Button>
+                        <Button className="flex-1" onClick={handleChangePassword}>
+                          Change Password
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Delete Account Dialog */}
+              {showDeleteDialog && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <Card className="w-full max-w-md mx-4 border-destructive">
+                    <CardHeader>
+                      <CardTitle className="text-destructive">Delete Account</CardTitle>
+                      <CardDescription>
+                        This action cannot be undone. All your data will be permanently deleted.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="delete-confirm">Type "DELETE" to confirm</Label>
+                        <Input
+                          id="delete-confirm"
+                          value={deleteConfirmation}
+                          onChange={(e) => setDeleteConfirmation(e.target.value)}
+                          placeholder="DELETE"
+                        />
+                      </div>
+                      <Alert className="border-destructive bg-destructive/10">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          Warning: This will permanently delete all your subscriptions, budgets, and preferences.
+                        </AlertDescription>
+                      </Alert>
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1" onClick={() => {
+                          setShowDeleteDialog(false)
+                          setDeleteConfirmation("")
+                        }}>
+                          Cancel
+                        </Button>
+                        <Button variant="destructive" className="flex-1" onClick={handleDeleteAccount}>
+                          Delete Account
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
             </TabsContent>
 
             {/* Notification Settings */}
@@ -280,8 +467,8 @@ export default function SettingsPage() {
 
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>Push Notifications</Label>
-                      <p className="text-sm text-muted-foreground">Receive browser push notifications</p>
+                      <Label>In-App Notifications</Label>
+                      <p className="text-sm text-muted-foreground">Receive notifications within the app</p>
                     </div>
                     <Switch
                       checked={settings.notifications.push}
@@ -294,26 +481,11 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>SMS Notifications</Label>
-                      <p className="text-sm text-muted-foreground">Receive text message alerts</p>
-                    </div>
-                    <Switch
-                      checked={settings.notifications.sms}
-                      onCheckedChange={(checked) =>
-                        setSettings((prev) => ({
-                          ...prev,
-                          notifications: { ...prev.notifications, sms: checked },
-                        }))
-                      }
-                    />
-                  </div>
-
                   <Separator />
 
                   <div className="space-y-2">
                     <Label>Payment Reminder</Label>
+                    <p className="text-sm text-muted-foreground">How many days before payment should we remind you?</p>
                     <Select
                       value={settings.notifications.reminderDays.toString()}
                       onValueChange={(value) =>

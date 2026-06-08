@@ -23,7 +23,7 @@ interface Subscription {
   cost: number
   billingCycle: string
   nextPayment: string
-  category: string
+  category: string | { id: string; name: string; color?: string }
   status: string
   aiConfidence: number
 }
@@ -33,19 +33,53 @@ interface SpendingAnalyticsProps {
 }
 
 export function SpendingAnalytics({ subscriptions }: SpendingAnalyticsProps) {
+  // Category color mapping based on database defaults
+  const categoryColors: Record<string, string> = {
+    Entertainment: "#ef4444",
+    Software: "#3b82f6",
+    Gaming: "#10b981",
+    Music: "#f59e0b",
+    "News & Media": "#8b5cf6",
+    Fitness: "#06b6d4",
+    "Food & Delivery": "#f97316",
+    Transportation: "#84cc16",
+    Utilities: "#6b7280",
+    Education: "#14b8a6",
+    Other: "#6b7280",
+  }
+
+  // Helper function to get category name
+  const getCategoryName = (category: string | { id: string; name: string; color?: string }): string => {
+    return typeof category === "string" ? category : category.name
+  }
+
+  // Helper function to get category color
+  const getCategoryColor = (category: string | { id: string; name: string; color?: string }): string => {
+    if (typeof category === "object" && category.color) {
+      return category.color
+    }
+    const categoryName = getCategoryName(category)
+    return categoryColors[categoryName] || "#6b7280"
+  }
+
   // Process data for charts
   const categoryData = subscriptions.reduce(
     (acc, sub) => {
+      const categoryName = getCategoryName(sub.category)
       const monthlyCost = sub.billingCycle === "monthly" ? sub.cost : sub.cost / 12
-      acc[sub.category] = (acc[sub.category] || 0) + monthlyCost
+      if (!acc[categoryName]) {
+        acc[categoryName] = { amount: 0, color: getCategoryColor(sub.category) }
+      }
+      acc[categoryName].amount += monthlyCost
       return acc
     },
-    {} as Record<string, number>,
+    {} as Record<string, { amount: number; color: string }>,
   )
 
-  const categoryChartData = Object.entries(categoryData).map(([category, amount]) => ({
+  const categoryChartData = Object.entries(categoryData).map(([category, data]) => ({
     category,
-    amount: Number.parseFloat(amount.toFixed(2)),
+    amount: Number.parseFloat(data.amount.toFixed(2)),
+    color: data.color,
   }))
 
   // Monthly trend data (simulated)
@@ -57,14 +91,13 @@ export function SpendingAnalytics({ subscriptions }: SpendingAnalyticsProps) {
     { month: "Feb", amount: categoryChartData.reduce((sum, item) => sum + item.amount, 0) },
   ]
 
-  // Individual subscription data for bar chart
+  // Individual subscription data for bar chart with colors based on category
   const subscriptionData = subscriptions.map((sub) => ({
     name: sub.name,
     monthly: sub.billingCycle === "monthly" ? sub.cost : sub.cost / 12,
     yearly: sub.billingCycle === "monthly" ? sub.cost * 12 : sub.cost,
+    color: getCategoryColor(sub.category),
   }))
-
-  const COLORS = ["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8dd1e1", "#d084d0"]
 
   const totalMonthly = categoryChartData.reduce((sum, item) => sum + item.amount, 0)
   const totalYearly = totalMonthly * 12
@@ -148,7 +181,7 @@ export function SpendingAnalytics({ subscriptions }: SpendingAnalyticsProps) {
                     dataKey="amount"
                   >
                     {categoryChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <ChartTooltip content={<ChartTooltipContent />} />
@@ -214,7 +247,11 @@ export function SpendingAnalytics({ subscriptions }: SpendingAnalyticsProps) {
                 <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
                 <YAxis />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="monthly" fill="#8884d8" name="Monthly Cost" />
+                <Bar dataKey="monthly" name="Monthly Cost">
+                  {subscriptionData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </ChartContainer>

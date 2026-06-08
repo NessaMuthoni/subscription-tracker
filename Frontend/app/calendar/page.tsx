@@ -10,31 +10,68 @@ import { MobileMenu } from "@/components/sidebar"
 import { useAuth } from "@/components/auth-provider"
 import { apiClient } from "@/lib/api-client"
 
+interface CalendarEvent {
+  id: string
+  title: string
+  date: string
+  type: string
+  amount: number
+  description: string
+}
+
 export default function CalendarPage() {
   const { user } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [subscriptions, setSubscriptions] = useState<any[]>([])
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  // Fetch subscriptions on component mount
+  // Fetch subscriptions and calendar events on component mount
   useEffect(() => {
-    const fetchSubscriptions = async () => {
+    const fetchData = async () => {
       if (!user) return
 
       try {
         setIsLoading(true)
-        const data = await apiClient.getSubscriptions()
-        setSubscriptions(data || [])
+        const [subsData, eventsData] = await Promise.all([
+          apiClient.getSubscriptions(),
+          fetchCalendarEvents()
+        ])
+        setSubscriptions(subsData || [])
+        setCalendarEvents(eventsData || [])
       } catch (error) {
-        console.error('Failed to fetch subscriptions:', error)
+        console.error('Failed to fetch data:', error)
         setSubscriptions([])
+        setCalendarEvents([])
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchSubscriptions()
+    fetchData()
   }, [user])
+
+  const fetchCalendarEvents = async () => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) return []
+
+      const response = await fetch("http://localhost:8080/api/calendar/events", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch calendar events")
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error("Failed to fetch calendar events:", error)
+      return []
+    }
+  }
 
   const currentMonth = currentDate.getMonth()
   const currentYear = currentDate.getFullYear()
@@ -65,25 +102,54 @@ export default function CalendarPage() {
     setCurrentDate(new Date(currentYear, currentMonth + (direction === "next" ? 1 : -1), 1))
   }
 
-  const getSubscriptionsForDate = (date: number) => {
+  const getEventsForDate = (date: number) => {
     const calendarDate = new Date(currentYear, currentMonth, date)
+    const events: any[] = []
     
-    return subscriptions.filter((sub) => {
+    // Get subscription events
+    subscriptions.forEach((sub) => {
       // Only show subscription if it was created before this date
       const createdDate = sub.created_at ? new Date(sub.created_at) : null
       if (createdDate && calendarDate < createdDate) {
-        return false // Don't show subscription before it was created
+        return // Don't show subscription before it was created
       }
 
       if (sub.billing_date) {
         const billingDate = new Date(sub.billing_date)
         // Match the day of month for recurring payments
-        return billingDate.getDate() === date && 
-               calendarDate >= billingDate // Only show from billing date onwards
+        if (billingDate.getDate() === date && calendarDate >= billingDate) {
+          events.push({
+            ...sub,
+            source: 'subscription'
+          })
+        }
       }
       // Fallback for legacy data structure
-      return sub.date === date
+      else if (sub.date === date) {
+        events.push({
+          ...sub,
+          source: 'subscription'
+        })
+      }
     })
+
+    // Get calendar events from backend
+    calendarEvents.forEach((event) => {
+      const eventDate = new Date(event.date)
+      if (eventDate.getDate() === date && 
+          eventDate.getMonth() === currentMonth && 
+          eventDate.getFullYear() === currentYear) {
+        events.push({
+          id: event.id,
+          name: event.title,
+          price: event.amount,
+          icon: "📅",
+          source: 'calendar'
+        })
+      }
+    })
+    
+    return events
   }
 
   const renderCalendarDays = () => {
@@ -96,7 +162,7 @@ export default function CalendarPage() {
 
     // Days of the month
     for (let day = 1; day <= daysInMonth; day++) {
-      const daySubscriptions = getSubscriptionsForDate(day)
+      const dayEvents = getEventsForDate(day)
       const isToday =
         new Date().getDate() === day &&
         new Date().getMonth() === currentMonth &&
@@ -106,9 +172,17 @@ export default function CalendarPage() {
         <div key={day} className={`h-24 border border-border p-1 ${isToday ? "bg-primary/10" : "bg-card"}`}>
           <div className={`text-sm font-medium mb-1 ${isToday ? "text-primary" : "text-foreground"}`}>{day}</div>
           <div className="space-y-1">
-            {daySubscriptions.map((sub) => (
-              <div key={sub.id} className="text-xs bg-primary/20 text-primary px-1 py-0.5 rounded truncate">
-                {sub.icon || "📋"} KSh {(sub.price || sub.cost || 0).toFixed(2)}
+            {dayEvents.map((event: any) => (
+              <div 
+                key={`${event.source}-${event.id}`} 
+                className={`text-xs px-1 py-0.5 rounded truncate ${
+                  event.source === 'calendar' 
+                    ? 'bg-green-500/20 text-green-700 dark:text-green-300' 
+                    : 'bg-primary/20 text-primary'
+                }`}
+                title={`${event.name} - KSh ${(event.price || event.cost || 0).toFixed(2)}`}
+              >
+                {event.icon || "📋"} {event.name}
               </div>
             ))}
           </div>

@@ -378,7 +378,8 @@ export default function AnalyticsPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={subscriptions.map(sub => ({ 
                         name: sub.name, 
-                        monthly: sub.price || sub.cost || 0 
+                        monthly: sub.price || sub.cost || 0,
+                        category: sub.category?.name || "Other"
                       }))}>
                         <XAxis 
                           dataKey="name" 
@@ -389,7 +390,26 @@ export default function AnalyticsPage() {
                         />
                         <YAxis domain={[0, 'auto']} />
                         <ChartTooltip content={<ChartTooltipContent />} />
-                        <Bar dataKey="monthly" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="monthly" radius={[4, 4, 0, 0]}>
+                          {subscriptions.map((sub, index) => {
+                            const categoryColors: Record<string, string> = {
+                              "Entertainment": "#ef4444",
+                              "Software": "#3b82f6",
+                              "Gaming": "#10b981",
+                              "Music": "#f59e0b",
+                              "News & Media": "#8b5cf6",
+                              "Fitness": "#06b6d4",
+                              "Food & Delivery": "#f97316",
+                              "Transportation": "#84cc16",
+                              "Utilities": "#6b7280",
+                              "Education": "#14b8a6",
+                              "Other": "#6b7280",
+                            }
+                            const categoryName = sub.category?.name || "Other"
+                            const color = categoryColors[categoryName] || "#6b7280"
+                            return <Cell key={`cell-${index}`} fill={color} />
+                          })}
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </ChartContainer>

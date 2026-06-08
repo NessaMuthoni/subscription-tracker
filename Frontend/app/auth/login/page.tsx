@@ -44,10 +44,8 @@ export default function LoginPage() {
       return
     }
     
-    const success = await loginWithGoogle()
-    if (!success) {
-      setError("Failed to sign in with Google. Please try again.")
-    }
+    await loginWithGoogle()
+    // Don't show error here - auth provider already shows toast errors
   }
 
   return (

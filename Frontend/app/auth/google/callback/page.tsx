@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function GoogleCallbackPage() {
   const router = useRouter();
+  const hasRun = useRef(false);
 
   useEffect(() => {
+    // Prevent double execution in React StrictMode
+    if (hasRun.current) return;
+    hasRun.current = true;
+
     const handleGoogleCallback = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);

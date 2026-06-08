@@ -148,6 +148,33 @@ class ApiClient {
     const response = await this.client.delete(`/payment-methods/${id}`)
     return response.data
   }
+
+  // Paystack payment endpoints
+  async initializePaystackPayment(data: { 
+    email: string; 
+    amount: number; 
+    reference?: string;
+    subscriptionName: string;
+  }) {
+    const response = await this.client.post('/payment/paystack/initialize', data)
+    return response.data
+  }
+
+  async verifyPaystackPayment(reference: string) {
+    const response = await this.client.get(`/payment/paystack/verify/${reference}`)
+    return response.data
+  }
+
+  // User security endpoints
+  async changePassword(data: { currentPassword: string; newPassword: string }) {
+    const response = await this.client.post('/user/change-password', data)
+    return response.data
+  }
+
+  async deleteAccount() {
+    const response = await this.client.delete('/user/delete')
+    return response.data
+  }
 }
 
 export const apiClient = new ApiClient()
